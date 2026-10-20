@@ -24,6 +24,11 @@ test('shows grouped PRs, renders untrusted text safely, and keeps long fields in
   expect(scrollWidths.body).toBeLessThanOrEqual(scrollWidths.viewport);
   expect(scrollWidths.root).toBeLessThanOrEqual(scrollWidths.viewport);
   expect(scrollWidths.popup).toBeLessThanOrEqual(scrollWidths.popupClient);
+  // The hostile fixture title is for the assertions above; screenshots show a plain long title instead.
+  await page.locator('.title', { hasText: '<img src=x' }).evaluate((el) => {
+    el.textContent =
+      'Sanitize untrusted titles with a long descriptive suffix that should wrap safely inside the compact popup row';
+  });
   await page.locator('.popup').screenshot({ path: 'screenshots/popup-light-all.png' });
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect
