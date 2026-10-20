@@ -134,7 +134,7 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            dbus-run-session -- xvfb-run -a ./bin/pr-nanny --smoke-test
+            xvfb-run -a dbus-run-session -- ./bin/pr-nanny --smoke-test
           elif [ "$RUNNER_OS" = Windows ]; then
             powershell -NoProfile -Command '$p = Start-Process ./bin/pr-nanny.exe -ArgumentList "--smoke-test" -PassThru -Wait; exit $p.ExitCode'
           else
