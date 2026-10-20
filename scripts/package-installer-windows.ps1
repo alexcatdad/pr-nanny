@@ -24,8 +24,11 @@ try {
   $Installer = Join-Path $Dist "pr-nanny-$Version-windows-x64-setup.exe"
   if (-not (Test-Path -LiteralPath $Installer)) { throw 'Expected installer was not created.' }
   $InstallerVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($Installer)
-  if ($InstallerVersion.ProductVersion -cne $Version -or $InstallerVersion.FileVersion -cne "$NumericVersion.0") {
-    throw 'Installer version resources do not match VERSION.'
+  # Inno Setup writes text into fixed-width, space-padded version resources.
+  $ProductVersion = $InstallerVersion.ProductVersion.TrimEnd()
+  $FileVersion = $InstallerVersion.FileVersion.TrimEnd()
+  if ($ProductVersion -cne $Version -or $FileVersion -cne "$NumericVersion.0") {
+    throw "Installer version resources do not match VERSION: product='$ProductVersion', file='$FileVersion'."
   }
   $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Installer).Hash.ToLowerInvariant()
   Set-Content -Encoding ascii -NoNewline -Path "$Installer.sha256" -Value "$Hash  $(Split-Path -Leaf $Installer)`n"
