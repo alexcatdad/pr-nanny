@@ -439,7 +439,7 @@ func TestApprovalUsesLatestOpinionatedReviewStates(t *testing.T) {
 			if err := json.Unmarshal([]byte(fixture), &raw); err != nil {
 				t.Fatal("invalid synthetic review fixture")
 			}
-			pr, err := raw.normalize("octocat", nil)
+			pr, err := raw.normalize("octocat", nil, false)
 			if err != nil || pr.Approved != tc.want {
 				t.Fatalf("approval=%t, want %t (err=%v)", pr.Approved, tc.want, err)
 			}
@@ -453,7 +453,7 @@ func TestNormalizeReviewRequestIDsIncludesMatchingDirectAndTeamOnly(t *testing.T
 	if err := json.Unmarshal([]byte(fixture), &raw); err != nil {
 		t.Fatal("invalid synthetic request fixture")
 	}
-	pr, err := raw.normalize("octocat", []string{"acme/engineering"})
+	pr, err := raw.normalize("octocat", []string{"acme/engineering"}, false)
 	if err != nil || !pr.ReviewRequested || strings.Join(pr.ReviewRequestIDs, ",") != "RR/+/==,UHVsbFJlcXVlc3RSZXF1ZXN0LzE=" {
 		t.Fatalf("matching request IDs = %v, requested=%t, err=%v", pr.ReviewRequestIDs, pr.ReviewRequested, err)
 	}

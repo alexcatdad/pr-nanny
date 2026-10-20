@@ -65,6 +65,7 @@ type Monitor struct {
 	connection  string
 	message     string
 	refreshing  bool
+	degraded    bool
 	retryAt     time.Time
 	generation  uint64
 	// pollAttemptHook is an optional synchronization seam for scheduler tests.
@@ -253,8 +254,11 @@ func (m *Monitor) Refresh(ctx context.Context) error {
 		}
 		pr.ReviewRequestIDs = normalizeReviewRequestIDs(pr.ReviewRequestIDs)
 		pr.Bell = newState.Bells[pr.ID]
-		cur := observe(pr)
 		prev, exists := old.Baseline[pr.ID]
+		if len(result.Warnings) > 0 && exists {
+			carryUnverifiedTeamRequests(&pr, prev)
+		}
+		cur := observe(pr)
 		relevant := pr.Authored || pr.ReviewRequested || old.Bells[pr.ID] || (terminal(pr) && exists)
 		if !relevant {
 			delete(newState.Baseline, pr.ID)
@@ -301,10 +305,17 @@ func (m *Monitor) Refresh(ctx context.Context) error {
 	m.state = newState
 	m.prs = updated
 	m.connection = "connected"
+	m.message = ""
 	if len(result.InaccessibleIDs) > 0 {
 		m.message = "Some pull requests are inaccessible; cached details may be out of date."
-	} else {
-		m.message = ""
+	}
+	// A partial fetch is surfaced, never presented as a complete sync.
+	m.degraded = len(result.Warnings) > 0
+	for _, warning := range result.Warnings {
+		if m.message != "" {
+			m.message += " "
+		}
+		m.message += warning
 	}
 	t := now
 	m.lastRefresh = &t
@@ -358,6 +369,7 @@ func (m *Monitor) transitions(pr model.PullRequest, prev, cur storage.Observed, 
 }
 
 func (m *Monitor) setFailureLocked(err error) {
+	m.degraded = false
 	m.retryAt = time.Time{}
 	var classified ClassifiedError
 	if errors.As(err, &classified) {
@@ -409,7 +421,7 @@ func (m *Monitor) Snapshot() model.Snapshot {
 		v := *m.lastRefresh
 		last = &v
 	}
-	return model.Snapshot{Settings: m.settings, PullRequests: prs, Connection: m.connection, Message: m.message, LastRefresh: last, Refreshing: m.refreshing}
+	return model.Snapshot{Settings: m.settings, PullRequests: prs, Connection: m.connection, Message: m.message, LastRefresh: last, Refreshing: m.refreshing, Degraded: m.degraded}
 }
 
 // Run polls immediately, then at the configured interval; consecutive failures
@@ -490,6 +502,35 @@ func (m *Monitor) wakeRun(immediate bool) {
 	case m.wake <- false:
 	default:
 	}
+}
+
+// carryUnverifiedTeamRequests keeps a review request that earlier cycles matched
+// to the viewer when team discovery is unavailable and the request still exists.
+// Missing team access must never read as a removed request: the request node ID
+// is stable, so recovery later yields identical IDs and no notification.
+func carryUnverifiedTeamRequests(pr *model.PullRequest, prev storage.Observed) {
+	if !prev.ReviewRequested || len(pr.UnverifiedTeamRequestIDs) == 0 {
+		return
+	}
+	still := make(map[string]struct{}, len(pr.UnverifiedTeamRequestIDs))
+	for _, id := range pr.UnverifiedTeamRequestIDs {
+		still[id] = struct{}{}
+	}
+	var carried []string
+	if len(prev.ReviewRequestIDs) == 0 {
+		// Boolean-only legacy baseline: the identity is unknown, so keep the state.
+		carried = append(carried, pr.UnverifiedTeamRequestIDs...)
+	}
+	for _, id := range prev.ReviewRequestIDs {
+		if _, ok := still[id]; ok {
+			carried = append(carried, id)
+		}
+	}
+	if len(carried) == 0 {
+		return
+	}
+	pr.ReviewRequested = true
+	pr.ReviewRequestIDs = normalizeReviewRequestIDs(append(append([]string(nil), pr.ReviewRequestIDs...), carried...))
 }
 
 func trackedIDs(baseline map[string]storage.Observed) []string {

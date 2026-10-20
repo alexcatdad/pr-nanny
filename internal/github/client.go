@@ -29,12 +29,23 @@ const (
 )
 
 var (
-	ErrAuth         = &Failure{kind: "auth", message: "GitHub authentication failed"}
-	ErrRateLimited  = &Failure{kind: "rate_limit", message: "GitHub rate limit reached", retry: time.Minute}
-	ErrUnavailable  = &Failure{kind: "offline", message: "GitHub is temporarily unavailable"}
-	ErrServer       = &Failure{kind: "server", message: "GitHub is temporarily unavailable"}
-	ErrResponse     = &Failure{kind: "server", message: "GitHub returned an unexpected response"}
+	ErrAuth        = &Failure{kind: "auth", message: "GitHub authentication failed"}
+	ErrRateLimited = &Failure{kind: "rate_limit", message: "GitHub rate limit reached", retry: time.Minute}
+	ErrUnavailable = &Failure{kind: "offline", message: "GitHub is temporarily unavailable"}
+	ErrServer      = &Failure{kind: "server", message: "GitHub is temporarily unavailable"}
+	ErrResponse    = &Failure{kind: "server", message: "GitHub returned an unexpected response"}
+	// ErrPermission means the token is valid but lacks access to one resource
+	// (org policy, SAML, missing scope). Only team discovery degrades on it; every
+	// other call maps it to ErrAuth.
+	ErrPermission   = &Failure{kind: "permission", message: "GitHub permission is insufficient"}
 	ErrInvalidInput = errors.New("invalid GitHub request")
+)
+
+const (
+	teamCacheTTL = 5 * time.Minute
+	// teamStaleGrace bounds how long the last complete team list keeps standing in
+	// while discovery is denied. After it, access is treated as revoked.
+	teamStaleGrace = time.Hour
 )
 
 // Failure exposes only safe category metadata to the polling layer.
@@ -60,11 +71,30 @@ type Client struct {
 	Endpoint string // injectable for deterministic tests; production uses GitHub.com
 	teamMu   sync.Mutex
 	teams    map[string]teamCacheEntry
+	now      func() time.Time // injectable clock for tests
 }
 
 type teamCacheEntry struct {
-	values  []string
-	expires time.Time
+	values   []string
+	expires  time.Time
+	degraded bool
+	// good is the last complete discovery; it survives denied refreshes until
+	// teamStaleGrace elapses or an authentication failure clears the entry.
+	good   []string
+	goodAt time.Time
+}
+
+func (c *Client) clock() time.Time {
+	if c.now != nil {
+		return c.now()
+	}
+	return time.Now()
+}
+
+// teamSet is the outcome of team discovery.
+type teamSet struct {
+	names    []string
+	degraded bool
 }
 
 func NewClient(httpClient *http.Client) *Client {
@@ -113,33 +143,64 @@ func (c *Client) Fetch(ctx context.Context, token, account string, trackedIDs []
 		"is:pr is:open author:" + account,
 		"is:pr is:open user-review-requested:" + account,
 	}
-	teams, err := c.viewerTeams(ctx, token, account)
+	set, err := c.viewerTeams(ctx, token, account)
 	if err != nil {
 		return model.FetchResult{}, err
 	}
-	for _, team := range teams {
-		queries = append(queries, "is:pr is:open team-review-requested:"+team)
-	}
+	teams := set.names
+	degraded := set.degraded
 	for _, query := range queries {
-		if err := c.fetchSearch(ctx, token, account, query, teams, prMap); err != nil {
-			return model.FetchResult{}, err
+		if err := c.fetchSearch(ctx, token, account, query, teams, degraded, prMap); err != nil {
+			return model.FetchResult{}, hardError(err)
+		}
+	}
+	// Team review is an independently degradable capability: a permission failure
+	// on one team query leaves the other results intact.
+	// Team searches only collect PR node IDs (about a third of the points of a
+	// full page); details come from one batched nodes() lookup shared with the
+	// tracked IDs below. Discovery, pagination and normalization are unchanged.
+	teamFound := make(map[string]bool)
+	for _, team := range teams {
+		err := c.fetchSearchIDs(ctx, token, "is:pr is:open team-review-requested:"+team, teamFound)
+		if errors.Is(err, ErrPermission) {
+			degraded = true
+			continue
+		}
+		if err != nil {
+			return model.FetchResult{}, hardError(err)
 		}
 	}
 	result := model.FetchResult{}
-	if len(trackedIDs) != 0 {
-		for start := 0; start < len(trackedIDs); start += trackedBatch {
-			end := start + trackedBatch
-			if end > len(trackedIDs) {
-				end = len(trackedIDs)
+	if degraded {
+		result.Warnings = []string{model.WarningTeamReview}
+	}
+	trackedSet := make(map[string]bool, len(trackedIDs))
+	lookup := append([]string(nil), trackedIDs...)
+	for _, id := range trackedIDs {
+		trackedSet[id] = true
+	}
+	for id := range teamFound {
+		if _, have := prMap[id]; !have && !trackedSet[id] {
+			lookup = append(lookup, id)
+		}
+	}
+	sort.Strings(lookup)
+	for start := 0; start < len(lookup); start += trackedBatch {
+		end := start + trackedBatch
+		if end > len(lookup) {
+			end = len(lookup)
+		}
+		tracked, inaccessible, err := c.fetchTracked(ctx, token, account, teams, degraded, lookup[start:end])
+		if err != nil {
+			return model.FetchResult{}, hardError(err)
+		}
+		for id, pr := range tracked {
+			prMap[id] = pr
+		}
+		for _, id := range inaccessible {
+			if trackedSet[id] { // a vanished team-search hit is not a tracked baseline
+				result.InaccessibleIDs = append(result.InaccessibleIDs, id)
 			}
-			tracked, inaccessible, err := c.fetchTracked(ctx, token, account, teams, trackedIDs[start:end])
-			if err != nil {
-				return model.FetchResult{}, err
-			}
-			for id, pr := range tracked {
-				prMap[id] = pr
-			}
-			result.InaccessibleIDs = append(result.InaccessibleIDs, inaccessible...)
 		}
 	}
 	for _, pr := range prMap {
@@ -155,18 +216,70 @@ func (c *Client) Fetch(ctx context.Context, token, account string, trackedIDs []
 	return result, nil
 }
 
-func (c *Client) viewerTeams(ctx context.Context, token, login string) ([]string, error) {
-	key := strings.ToLower(login)
-	c.teamMu.Lock()
-	if cached, ok := c.teams[key]; ok && time.Now().Before(cached.expires) {
-		values := append([]string(nil), cached.values...)
-		c.teamMu.Unlock()
-		return values, nil
+// hardError maps a permission failure outside team discovery to ErrAuth, which
+// is the pre-existing behavior for authored, direct-review and tracked fetches.
+func hardError(err error) error {
+	if errors.Is(err, ErrPermission) {
+		return ErrAuth
 	}
+	return err
+}
+
+// viewerTeams returns the viewer's teams. Permission failures (403, FORBIDDEN,
+// insufficient scopes, SAML/org policy) degrade instead of failing; 401 and every
+// transient failure still abort the cycle.
+func (c *Client) viewerTeams(ctx context.Context, token, login string) (teamSet, error) {
+	key := strings.ToLower(login)
+	now := c.clock()
+	c.teamMu.Lock()
+	cached, hit := c.teams[key]
 	c.teamMu.Unlock()
+	if hit && now.Before(cached.expires) {
+		return teamSet{names: append([]string(nil), cached.values...), degraded: cached.degraded}, nil
+	}
+	teams, failedOrgs, orgsDenied, err := c.discoverTeams(ctx, token, login)
+	c.teamMu.Lock()
+	defer c.teamMu.Unlock()
+	if err != nil {
+		if errors.Is(err, ErrAuth) {
+			delete(c.teams, key) // credentials are clearly bad; drop everything
+		}
+		return teamSet{}, err
+	}
+	if c.teams == nil {
+		c.teams = make(map[string]teamCacheEntry)
+	}
+	if len(failedOrgs) == 0 && !orgsDenied {
+		c.teams[key] = teamCacheEntry{values: teams, expires: now.Add(teamCacheTTL), good: teams, goodAt: now}
+		return teamSet{names: append([]string(nil), teams...)}, nil
+	}
+	// Degraded: keep the previous complete list as a stand-in for the denied orgs
+	// while it is within the grace window; never overwrite it with partial data.
+	merged := append([]string(nil), teams...)
+	good, goodAt := cached.good, cached.goodAt
+	if len(good) != 0 && now.Sub(goodAt) < teamStaleGrace {
+		for _, name := range good {
+			org, _, _ := strings.Cut(name, "/")
+			if orgsDenied || failedOrgs[strings.ToLower(org)] {
+				merged = append(merged, name)
+			}
+		}
+	} else {
+		good, goodAt = nil, time.Time{}
+	}
+	sort.Strings(merged)
+	merged = uniqueStrings(merged)
+	c.teams[key] = teamCacheEntry{values: merged, expires: now.Add(teamCacheTTL), degraded: true, good: good, goodAt: goodAt}
+	return teamSet{names: append([]string(nil), merged...), degraded: true}, nil
+}
+
+// discoverTeams enumerates organizations and their teams. failedOrgs holds
+// lower-cased orgs whose team listing was denied; orgsDenied means the org list
+// itself was denied.
+func (c *Client) discoverTeams(ctx context.Context, token, login string) (teams []string, failedOrgs map[string]bool, orgsDenied bool, err error) {
 	const orgQuery = `query($after:String){viewer{login organizations(first:100,after:$after){nodes{login} pageInfo{hasNextPage endCursor}}}}`
 	const teamQuery = `query($login:String!,$org:String!,$after:String){organization(login:$org){teams(first:100,after:$after,userLogins:[$login]){nodes{slug} pageInfo{hasNextPage endCursor}}}}`
-	var teams []string
+	failedOrgs = map[string]bool{}
 	var cursor any
 	for page := 0; page < maxConnections; page++ {
 		var orgData struct {
@@ -183,17 +296,35 @@ func (c *Client) viewerTeams(ctx context.Context, token, login string) ([]string
 				} `json:"organizations"`
 			} `json:"viewer"`
 		}
-		if err := c.request(ctx, token, orgQuery, map[string]any{"after": cursor}, &orgData); err != nil {
-			return nil, err
+		if err := c.requestRaw(ctx, token, orgQuery, map[string]any{"after": cursor}, &orgData); err != nil {
+			if !errors.Is(err, ErrPermission) {
+				return nil, nil, false, err
+			}
+			// Org enumeration denied. Still prove the token belongs to the account
+			// (the org query normally does) before authored searches trust it.
+			var who struct {
+				Viewer struct {
+					Login string `json:"login"`
+				} `json:"viewer"`
+			}
+			if err := c.requestRaw(ctx, token, `query{viewer{login}}`, map[string]any{}, &who); err != nil {
+				return nil, nil, false, hardError(err)
+			}
+			if !strings.EqualFold(who.Viewer.Login, login) {
+				return nil, nil, false, ErrAuth
+			}
+			return nil, failedOrgs, true, nil
 		}
 		if !strings.EqualFold(orgData.Viewer.Login, login) {
-			return nil, ErrAuth
+			return nil, nil, false, ErrAuth
 		}
 		for _, org := range orgData.Viewer.Organizations.Nodes {
 			if !validLogin(org.Login) {
-				return nil, ErrResponse
+				return nil, nil, false, ErrResponse
 			}
+			var orgTeams []string
 			var teamCursor any
+			denied := false
 			for teamPage := 0; teamPage < maxConnections; teamPage++ {
 				var teamData struct {
 					Organization *struct {
@@ -208,48 +339,51 @@ func (c *Client) viewerTeams(ctx context.Context, token, login string) ([]string
 						} `json:"teams"`
 					} `json:"organization"`
 				}
-				if err := c.request(ctx, token, teamQuery, map[string]any{"login": login, "org": org.Login, "after": teamCursor}, &teamData); err != nil {
-					return nil, err
+				if err := c.requestRaw(ctx, token, teamQuery, map[string]any{"login": login, "org": org.Login, "after": teamCursor}, &teamData); err != nil {
+					if errors.Is(err, ErrPermission) {
+						denied = true
+						break
+					}
+					return nil, nil, false, err
 				}
 				if teamData.Organization == nil {
-					return nil, ErrResponse
+					return nil, nil, false, ErrResponse
 				}
 				for _, team := range teamData.Organization.Teams.Nodes {
 					if !validSlug(team.Slug) {
-						return nil, ErrResponse
+						return nil, nil, false, ErrResponse
 					}
-					teams = append(teams, org.Login+"/"+team.Slug)
+					orgTeams = append(orgTeams, org.Login+"/"+team.Slug)
 				}
 				if !teamData.Organization.Teams.PageInfo.HasNextPage {
 					break
 				}
 				if teamPage == maxConnections-1 || teamData.Organization.Teams.PageInfo.EndCursor == "" {
-					return nil, ErrResponse
+					return nil, nil, false, ErrResponse
 				}
 				teamCursor = teamData.Organization.Teams.PageInfo.EndCursor
 			}
+			if denied {
+				failedOrgs[strings.ToLower(org.Login)] = true
+				continue // a partial team list for this org is discarded
+			}
+			teams = append(teams, orgTeams...)
 		}
 		if !orgData.Viewer.Organizations.PageInfo.HasNextPage {
 			break
 		}
 		if page == maxConnections-1 || orgData.Viewer.Organizations.PageInfo.EndCursor == "" {
-			return nil, ErrResponse
+			return nil, nil, false, ErrResponse
 		}
 		cursor = orgData.Viewer.Organizations.PageInfo.EndCursor
 	}
 	sort.Strings(teams)
-	c.teamMu.Lock()
-	if c.teams == nil {
-		c.teams = make(map[string]teamCacheEntry)
-	}
-	c.teams[key] = teamCacheEntry{values: append([]string(nil), teams...), expires: time.Now().Add(5 * time.Minute)}
-	c.teamMu.Unlock()
-	return teams, nil
+	return teams, failedOrgs, false, nil
 }
 
 const pullFragment = `nodes{__typename ... on PullRequest{id number title url createdAt updatedAt closedAt merged author{login} latestReviews:latestOpinionatedReviews(first:100){nodes{author{login} state} pageInfo{hasNextPage endCursor}} reviewRequests(first:100){nodes{id requestedReviewer{__typename ... on User{login} ... on Team{slug organization{login}}}} pageInfo{hasNextPage endCursor}} statusCheckRollup{state contexts(first:100){nodes{__typename ... on CheckRun{status conclusion} ... on StatusContext{state}} pageInfo{hasNextPage endCursor}}} repository{nameWithOwner}}}`
 
-func (c *Client) fetchSearch(ctx context.Context, token, login, search string, teams []string, dst map[string]model.PullRequest) error {
+func (c *Client) fetchSearch(ctx context.Context, token, login, search string, teams []string, degraded bool, dst map[string]model.PullRequest) error {
 	const query = `query($search:String!,$after:String){search(query:$search,type:ISSUE,first:100,after:$after){issueCount pageInfo{hasNextPage endCursor} ` + pullFragment + `}}`
 	var cursor any
 	for page := 0; page < maxPageCount; page++ {
@@ -263,7 +397,7 @@ func (c *Client) fetchSearch(ctx context.Context, token, login, search string, t
 				Nodes []rawPR `json:"nodes"`
 			} `json:"search"`
 		}
-		if err := c.request(ctx, token, query, map[string]any{"search": search, "after": cursor}, &data); err != nil {
+		if err := c.requestRaw(ctx, token, query, map[string]any{"search": search, "after": cursor}, &data); err != nil {
 			return err
 		}
 		for _, raw := range data.Search.Nodes {
@@ -274,7 +408,7 @@ func (c *Client) fetchSearch(ctx context.Context, token, login, search string, t
 			if err != nil {
 				return err
 			}
-			pr, err := raw.normalize(login, teams)
+			pr, err := raw.normalize(login, teams, degraded)
 			if err != nil {
 				return err
 			}
@@ -294,7 +428,48 @@ func (c *Client) fetchSearch(ctx context.Context, token, login, search string, t
 	return ErrResponse
 }
 
-func (c *Client) fetchTracked(ctx context.Context, token, login string, teams, ids []string) (map[string]model.PullRequest, []string, error) {
+// fetchSearchIDs pages a search and records only PR node IDs.
+func (c *Client) fetchSearchIDs(ctx context.Context, token, search string, dst map[string]bool) error {
+	const query = `query($search:String!,$after:String){search(query:$search,type:ISSUE,first:100,after:$after){issueCount pageInfo{hasNextPage endCursor} nodes{__typename ... on PullRequest{id}}}}`
+	var cursor any
+	for page := 0; page < maxPageCount; page++ {
+		var data struct {
+			Search struct {
+				IssueCount int `json:"issueCount"`
+				PageInfo   struct {
+					HasNextPage bool   `json:"hasNextPage"`
+					EndCursor   string `json:"endCursor"`
+				} `json:"pageInfo"`
+				Nodes []struct {
+					Type string `json:"__typename"`
+					ID   string `json:"id"`
+				} `json:"nodes"`
+			} `json:"search"`
+		}
+		if err := c.requestRaw(ctx, token, query, map[string]any{"search": search, "after": cursor}, &data); err != nil {
+			return err
+		}
+		for _, node := range data.Search.Nodes {
+			if node.Type != "PullRequest" {
+				continue
+			}
+			if !validNodeID(node.ID) {
+				return ErrResponse
+			}
+			dst[node.ID] = true
+		}
+		if !data.Search.PageInfo.HasNextPage {
+			return nil
+		}
+		if page == maxPageCount-1 || data.Search.PageInfo.EndCursor == "" || data.Search.IssueCount >= 1000 && page >= 9 {
+			return ErrResponse
+		}
+		cursor = data.Search.PageInfo.EndCursor
+	}
+	return ErrResponse
+}
+
+func (c *Client) fetchTracked(ctx context.Context, token, login string, teams []string, degraded bool, ids []string) (map[string]model.PullRequest, []string, error) {
 	for _, id := range ids {
 		if !validNodeID(id) {
 			return nil, nil, ErrInvalidInput
@@ -326,7 +501,7 @@ func (c *Client) fetchTracked(ctx context.Context, token, login string, teams, i
 			return nil, nil, err
 		}
 		raw = completed
-		pr, err := raw.normalize(login, teams)
+		pr, err := raw.normalize(login, teams, degraded)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -343,7 +518,14 @@ func (c *Client) fetchTracked(ctx context.Context, token, login string, teams, i
 	return tracked, missing, nil
 }
 
+// request maps permission failures to ErrAuth for callers that cannot degrade.
 func (c *Client) request(ctx context.Context, token, query string, variables map[string]any, out any) error {
+	return hardError(c.requestRaw(ctx, token, query, variables, out))
+}
+
+// requestRaw may return ErrPermission, which only team discovery and team
+// searches handle.
+func (c *Client) requestRaw(ctx context.Context, token, query string, variables map[string]any, out any) error {
 	body, err := json.Marshal(graphRequest{Query: query, Variables: variables})
 	if err != nil {
 		return ErrInvalidInput
@@ -368,8 +550,11 @@ func (c *Client) request(ctx context.Context, token, query string, variables map
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusForbidden && isRateLimitResponse(resp) {
 		return rateError(resp)
 	}
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+	if resp.StatusCode == http.StatusUnauthorized {
 		return ErrAuth
+	}
+	if resp.StatusCode == http.StatusForbidden {
+		return ErrPermission
 	}
 	if resp.StatusCode >= 500 {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
@@ -385,6 +570,7 @@ func (c *Client) request(ctx context.Context, token, query string, variables map
 	}
 	if len(envelope.Errors) != 0 {
 		allAllowed := true
+		permissionDenied := false
 		for _, e := range envelope.Errors {
 			if e.Type == "RATE_LIMITED" {
 				return rateError(resp)
@@ -400,11 +586,17 @@ func (c *Client) request(ctx context.Context, token, query string, variables map
 				continue
 			}
 			allAllowed = false
-			if e.Type == "UNAUTHORIZED" || e.Type == "FORBIDDEN" {
+			if e.Type == "UNAUTHORIZED" {
 				return ErrAuth
+			}
+			if e.Type == "FORBIDDEN" || e.Type == "INSUFFICIENT_SCOPES" || e.Type == "SAML_ENFORCEMENT" || (e.Type == "NOT_FOUND" && strings.Contains(query, "organization(login:")) {
+				permissionDenied = true
 			}
 		}
 		if !allAllowed {
+			if permissionDenied {
+				return ErrPermission
+			}
 			return ErrResponse
 		}
 	}
@@ -485,10 +677,18 @@ func validGraphShape(data json.RawMessage, query string, allowUnavailableCI bool
 		return json.Unmarshal(pi["hasNextPage"], &more) == nil
 	}
 	switch {
+	case query == `query{viewer{login}}`:
+		return object(path("viewer")) != nil
 	case strings.Contains(query, "organizations(first:"):
 		return object(path("viewer")) != nil && connection("viewer", "organizations")
 	case strings.Contains(query, "teams(first:"):
 		return object(path("organization")) != nil && connection("organization", "teams")
+	case strings.Contains(query, "search(query:") && !strings.Contains(query, "latestReviews"):
+		if !connection("search") {
+			return false
+		}
+		var count int
+		return json.Unmarshal(object(path("search"))["issueCount"], &count) == nil
 	case strings.Contains(query, "search(query:"):
 		if !connection("search") {
 			return false
@@ -806,7 +1006,7 @@ func (c *Client) completeReviewPages(ctx context.Context, token string, raw rawP
 	return raw, nil
 }
 
-func (r rawPR) normalize(login string, teams []string) (model.PullRequest, error) {
+func (r rawPR) normalize(login string, teams []string, degraded bool) (model.PullRequest, error) {
 	created, err := time.Parse(time.RFC3339, r.CreatedAt)
 	if err != nil {
 		return model.PullRequest{}, ErrResponse
@@ -836,7 +1036,7 @@ func (r rawPR) normalize(login string, teams []string) (model.PullRequest, error
 		}
 	}
 	reviewRequested := false
-	var reviewRequestIDs []string
+	var reviewRequestIDs, unverified []string
 	for _, req := range r.ReviewRequests.Nodes {
 		if !validNodeID(req.ID) {
 			return model.PullRequest{}, ErrResponse
@@ -855,6 +1055,9 @@ func (r rawPR) normalize(login string, teams []string) (model.PullRequest, error
 					break
 				}
 			}
+			if !matches && degraded {
+				unverified = append(unverified, req.ID)
+			}
 		}
 		if matches {
 			reviewRequestIDs = append(reviewRequestIDs, req.ID)
@@ -862,7 +1065,9 @@ func (r rawPR) normalize(login string, teams []string) (model.PullRequest, error
 	}
 	sort.Strings(reviewRequestIDs)
 	reviewRequestIDs = uniqueStrings(reviewRequestIDs)
-	pr := model.PullRequest{ID: r.ID, Number: r.Number, Title: r.Title, Repository: r.Repository.NameWithOwner, URL: r.URL, CreatedAt: created, UpdatedAt: updated, ClosedAt: closed, Merged: r.Merged, Approved: approved, CI: normalizeCI(r.StatusCheckRollup), Authored: strings.EqualFold(r.Author.Login, login), ReviewRequested: reviewRequested, ReviewRequestIDs: reviewRequestIDs}
+	sort.Strings(unverified)
+	unverified = uniqueStrings(unverified)
+	pr := model.PullRequest{ID: r.ID, Number: r.Number, Title: r.Title, Repository: r.Repository.NameWithOwner, URL: r.URL, CreatedAt: created, UpdatedAt: updated, ClosedAt: closed, Merged: r.Merged, Approved: approved, CI: normalizeCI(r.StatusCheckRollup), Authored: strings.EqualFold(r.Author.Login, login), ReviewRequested: reviewRequested, ReviewRequestIDs: reviewRequestIDs, UnverifiedTeamRequestIDs: unverified}
 	return pr, nil
 }
 
