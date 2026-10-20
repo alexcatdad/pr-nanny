@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,6 +16,30 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 )
+
+func TestTrayDisplayBackend(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("GTK backend selection is Linux-specific")
+	}
+	for _, tc := range []struct {
+		name, display, wayland, backend, want string
+	}{
+		{"mixed session", ":0", "wayland-0", "", "x11,wayland"},
+		{"explicit Wayland", ":0", "wayland-0", "wayland", "wayland"},
+		{"Wayland only", "", "wayland-0", "", ""},
+		{"X11 only", ":0", "", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DISPLAY", tc.display)
+			t.Setenv("WAYLAND_DISPLAY", tc.wayland)
+			t.Setenv("GDK_BACKEND", tc.backend)
+			configureTrayDisplay()
+			if got := os.Getenv("GDK_BACKEND"); got != tc.want {
+				t.Fatalf("GDK_BACKEND = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
 
 type fakeNotifications struct {
 	mu             sync.Mutex

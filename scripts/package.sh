@@ -25,7 +25,14 @@ build_binary() {
 
 checksum() {
   archive=$1
-  (cd "$(dirname "$archive")" && shasum -a 256 "$(basename "$archive")" > "$(basename "$archive").sha256")
+  (
+    cd "$(dirname "$archive")"
+    if command -v sha256sum >/dev/null 2>&1; then
+      sha256sum "$(basename "$archive")" > "$(basename "$archive").sha256"
+    else
+      shasum -a 256 "$(basename "$archive")" > "$(basename "$archive").sha256"
+    fi
+  )
 }
 
 case "$TARGET" in
