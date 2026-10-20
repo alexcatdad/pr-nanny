@@ -1,6 +1,63 @@
 [
-  {"id":"pr-101","number":101,"title":"Improve request caching across repeated polling cycles","repository":"alexcatdad/pr-nanny","url":"https://github.com/alexcatdad/pr-nanny/pull/101","createdAt":"2026-10-20T02:00:00Z","updatedAt":"2026-10-20T04:45:00Z","merged":false,"approved":true,"ci":"passed","authored":true,"reviewRequested":false,"bell":false},
-  {"id":"pr-102","number":102,"title":"<img src=x onerror=alert(1)> sanitize untrusted title with a long descriptive suffix that should wrap safely inside the compact tray window","repository":"acme-inc/a-very-long-private-repository-name-for-layout","url":"https://github.com/acme-inc/repo/pull/102","createdAt":"2026-10-18T04:00:00Z","updatedAt":"2026-10-20T04:50:00Z","merged":false,"approved":false,"ci":"not_passed","authored":false,"reviewRequested":true,"bell":false},
-  {"id":"pr-103","number":103,"title":"Unknown checks stay informational","repository":"alexcatdad/infra","url":"https://github.com/alexcatdad/infra/pull/103","createdAt":"2026-10-19T02:00:00Z","updatedAt":"2026-10-20T03:00:00Z","merged":false,"approved":false,"ci":"not_available","authored":true,"reviewRequested":true,"bell":true},
-  {"id":"pr-104","number":104,"title":"Recent merged change","repository":"alexcatdad/docs","url":"https://github.com/alexcatdad/docs/pull/104","createdAt":"2026-10-19T02:00:00Z","updatedAt":"2026-10-20T04:30:00Z","closedAt":"2026-10-20T04:59:30Z","merged":true,"approved":true,"ci":"running","authored":false,"reviewRequested":false,"bell":false}
+  {
+    "id": "pr-101",
+    "number": 101,
+    "title": "Improve request caching across repeated polling cycles",
+    "repository": "alexcatdad/pr-nanny",
+    "url": "https://github.com/alexcatdad/pr-nanny/pull/101",
+    "createdAt": "2026-10-20T02:00:00Z",
+    "updatedAt": "2026-10-20T04:45:00Z",
+    "merged": false,
+    "approved": true,
+    "ci": "passed",
+    "authored": true,
+    "reviewRequested": false,
+    "bell": false
+  },
+  {
+    "id": "pr-102",
+    "number": 102,
+    "title": "<img src=x onerror=alert(1)> sanitize untrusted title with a long descriptive suffix that should wrap safely inside the compact tray window",
+    "repository": "acme-inc/a-very-long-private-repository-name-for-layout",
+    "url": "https://github.com/acme-inc/repo/pull/102",
+    "createdAt": "2026-10-18T04:00:00Z",
+    "updatedAt": "2026-10-20T04:50:00Z",
+    "merged": false,
+    "approved": false,
+    "ci": "not_passed",
+    "authored": false,
+    "reviewRequested": true,
+    "bell": false
+  },
+  {
+    "id": "pr-103",
+    "number": 103,
+    "title": "Unknown checks stay informational",
+    "repository": "alexcatdad/infra",
+    "url": "https://github.com/alexcatdad/infra/pull/103",
+    "createdAt": "2026-10-19T02:00:00Z",
+    "updatedAt": "2026-10-20T03:00:00Z",
+    "merged": false,
+    "approved": false,
+    "ci": "not_available",
+    "authored": true,
+    "reviewRequested": true,
+    "bell": true
+  },
+  {
+    "id": "pr-104",
+    "number": 104,
+    "title": "Recent merged change",
+    "repository": "alexcatdad/docs",
+    "url": "https://github.com/alexcatdad/docs/pull/104",
+    "createdAt": "2026-10-19T02:00:00Z",
+    "updatedAt": "2026-10-20T04:30:00Z",
+    "closedAt": "2026-10-20T04:59:30Z",
+    "merged": true,
+    "approved": true,
+    "ci": "running",
+    "authored": false,
+    "reviewRequested": false,
+    "bell": false
+  }
 ]
