@@ -38,3 +38,9 @@ One isolated bundled macOS launch/frontend IPC probe completed in 1.07 seconds, 
 Source history is scanned with Gitleaks; workflows with zizmor/actionlint; application code with Gosec, Govulncheck and CodeQL. Exact-head source review found no new exploitable entrypoint in the reviewed runtime boundaries. SECURITY.md records the demonstrated existing post-compromise webview-navigation limitation. Native signing/notarization and physical desktop acceptance remain distinct from build provenance and automated qualification.
 
 Release tags reject updates/deletion, new releases are immutable, and publication verifies all required jobs plus all package attestations for the exact source SHA. See [the implementation checkpoint](IMPLEMENTATION-STATUS.md) and [release documentation](../build/README.md).
+
+## Hosted native evidence
+
+[Validation run 39392719790](https://github.com/alexcatdad/pr-nanny/actions/runs/39392719790) completed macOS and Linux native jobs successfully. Both performed real native credential-store roundtrips, production capability checks, native launch with embedded frontend IPC, and package integrity verification. Linux additionally passed isolated install/reinstall/uninstall with paths containing spaces and preserved unrelated data. Its desktop probe ran under Xvfb/D-Bus with a test keyring and notification daemon. These are automated runner checks; they do not establish physical desktop or login-session behavior.
+
+The same completed run restored primary-key Go caches on macOS and Linux; their native jobs took 49 and 102 seconds respectively, excluding the shared frontend dependency and runner scheduling. The whole run failed at Windows PowerShell lint, so it does not establish a successful optimized release critical path. Both CodeQL language jobs passed; Go's traced analysis took 140 seconds. Final comparative timing requires an entirely successful run.

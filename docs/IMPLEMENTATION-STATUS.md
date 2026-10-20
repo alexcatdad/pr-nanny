@@ -36,7 +36,7 @@ Publish the locally validated quality PR, record its checks and independent revi
 
 [First quality run](https://github.com/alexcatdad/pr-nanny/actions/runs/39391536852) passed macOS and Linux native qualification, frontend, coverage, lint and security jobs. Windows resource generation exposed CRLF checkout handling; a reproducing local test now covers LF/CRLF input. CodeQL Go rejected the unsupported `none` build mode; its workflow now performs a traced production build with native dependencies and the shared frontend artifact. These fixes require a fresh exact-head run. The stale-poll browser regression now pauses the clock and was verified to reject removal of the save-generation guard.
 
-## Delivery checkpoint — 08:40 UTC
+## Delivery checkpoint — 08:30 UTC
 
 - [Quality PR #5](https://github.com/alexcatdad/pr-nanny/pull/5) is ready for review with native auto-merge enabled; publication still depends on required checks. Head `5817b1d` replaces PowerShell host-only status output after the enforced analyzer reported warnings. Independent review found no blocker in that delta.
 - [Second quality run](https://github.com/alexcatdad/pr-nanny/actions/runs/39392719790) passed both CodeQL languages, all security/lint/coverage/frontend jobs, and macOS/Linux native qualification. Windows reached PowerShell analysis and failed on two output warnings; the subsequent corrective head requires fresh qualification. No failing gate was disabled.
