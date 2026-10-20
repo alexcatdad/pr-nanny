@@ -69,6 +69,8 @@ const connectCLI = async () => {
     busy = false;
   }
 };
+// `switch` renders the native OS toggle; Svelte's input types don't list it yet.
+const sw = { switch: true } as Record<string, boolean>;
 const change = () => {
   void update();
 };
@@ -149,15 +151,15 @@ const events: [keyof Settings['events'], string][] = [
         <small>Stored securely in your operating system’s credential store.</small>
       </form>
     {:else}
-      <button type="button" class="secondary connect-cli" onclick={() => void connectCLI()} disabled={busy}>
+      <button type="button" class="primary connect-cli" onclick={() => void connectCLI()} disabled={busy}>
         Connect GitHub CLI
       </button>
     {/if}
   </section>
   <section class="setting-section">
-    <h2>Updates</h2>
+    <h2>Refresh</h2>
     <label class="select-row"
-      ><span><strong>Check every</strong><small>How often PR Nanny checks GitHub</small></span
+      ><span><strong>Check GitHub every</strong><small>Shorter intervals use more of your rate limit</small></span
       ><select aria-label="Update interval" disabled={busy} bind:value={settings.intervalSeconds} onchange={change}>
         <option value={30}>30 seconds</option>
         <option value={60}>60 seconds</option>
@@ -169,8 +171,8 @@ const events: [keyof Settings['events'], string][] = [
   <section class="setting-section">
     <h2>Notifications</h2>
     <label class="toggle-row"
-      ><span><strong>Notifications</strong><small>Allow PR Nanny to send notifications</small></span>
-      <input type="checkbox" disabled={busy} bind:checked={settings.notifications} onchange={change}></label
+      ><span><strong>Allow notifications</strong><small>Alert me when something changes</small></span>
+      <input type="checkbox" {...sw} disabled={busy} bind:checked={settings.notifications} onchange={change}></label
     >
     <div class="event-list" class:disabled={!settings.notifications}>
       {#each events as [key, label]}
@@ -178,6 +180,7 @@ const events: [keyof Settings['events'], string][] = [
           ><span>{label}</span>
           <input
             type="checkbox"
+            {...sw}
             bind:checked={settings.events[key]}
             disabled={busy || !settings.notifications}
             onchange={change}
@@ -193,7 +196,7 @@ const events: [keyof Settings['events'], string][] = [
     <h2>Startup</h2>
     <label class="toggle-row"
       ><span><strong>Launch at login</strong><small>Start PR Nanny when you sign in</small></span>
-      <input type="checkbox" disabled={busy} bind:checked={settings.launchAtLogin} onchange={change}></label
+      <input type="checkbox" {...sw} disabled={busy} bind:checked={settings.launchAtLogin} onchange={change}></label
     >
   </section>
   {#if notice}

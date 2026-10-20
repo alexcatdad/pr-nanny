@@ -24,11 +24,16 @@ test('shows grouped PRs, renders untrusted text safely, and keeps long fields in
   expect(scrollWidths.body).toBeLessThanOrEqual(scrollWidths.viewport);
   expect(scrollWidths.root).toBeLessThanOrEqual(scrollWidths.viewport);
   expect(scrollWidths.popup).toBeLessThanOrEqual(scrollWidths.popupClient);
+  // The hostile fixture title is for the assertions above; screenshots show a plain long title instead.
+  await page.locator('.title', { hasText: '<img src=x' }).evaluate((el) => {
+    el.textContent =
+      'Sanitize untrusted titles with a long descriptive suffix that should wrap safely inside the compact popup row';
+  });
   await page.locator('.popup').screenshot({ path: 'screenshots/popup-light-all.png' });
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect
     .poll(() => page.locator('.popup').evaluate((el) => getComputedStyle(el).backgroundColor))
-    .toBe('rgb(22, 27, 34)');
+    .toBe('rgb(18, 18, 18)');
   const darkWidths = await page.evaluate(() => {
     const popup = document.querySelector('.popup');
     if (!(popup instanceof HTMLElement)) throw new Error('Popup element is missing');
@@ -57,7 +62,7 @@ test('shows grouped PRs, renders untrusted text safely, and keeps long fields in
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect
     .poll(() => page.locator('.popup').evaluate((el) => getComputedStyle(el).backgroundColor))
-    .toBe('rgb(22, 27, 34)');
+    .toBe('rgb(18, 18, 18)');
   await page.locator('.popup').screenshot({ path: 'screenshots/popup-dark-tabs.png' });
   await page.emulateMedia({ colorScheme: 'light' });
   await page.getByRole('button', { name: /Review/ }).click();
