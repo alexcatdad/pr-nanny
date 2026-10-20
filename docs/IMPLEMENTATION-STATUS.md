@@ -25,6 +25,13 @@ Updated: 2026-10-20. Working branch: `codex/app-tap-delivery`.
 ## Remaining acceptance and prerequisites
 
 - Actual OS sleep/resume, whole-system network disconnection and later-login execution were not forced on the active desktop. Deterministic recovery tests and login-item registration are separate evidence. Fedora KDE graphical acceptance remains unverified; no remote systems or infrastructure were changed.
-- Automatic cross-repository dispatch now uses the existing release GitHub App through the `action-runners` environment, with a short-lived token limited to Actions write on the existing tap. Configuration requires `APP_ID`, `APP_SECRET` and installation Actions write on the tap. The public `APP_ID` is configured; source-to-tap App dispatch acceptance remains pending. A newly published release triggers the importer; existing releases are not republished to test delivery. The importer creates a PR and runs checks; merging still requires the checked delivery gate. No new credential or PAT is needed. Developer ID/Authenticode credentials remain unavailable, so provenance is distinct from signing/notarization.
+- Automatic cross-repository dispatch: the rc.4 run failed because `APP_SECRET` was not a valid GitHub App key, and later because the installation lacked Actions write on the tap. After the key was re-pasted and the permission accepted, [the rc.4 dispatch job](https://github.com/alexcatdad/pr-nanny/actions/runs/39414411111/job/118626564073) minted a tap-scoped token and dispatched the importer successfully. [PR #14](https://github.com/alexcatdad/pr-nanny/pull/14) adds a preflight that checks the key's structure without printing it. Developer ID/Authenticode credentials remain unavailable, so provenance is distinct from signing/notarization.
+
+## RC4 and reliability follow-up (2026-10-20)
+
+- [Tap PR #10](https://github.com/alexcatdad/homebrew-tap/pull/10) imported RC4 through the verified manual workflow; all three install/syntax checks passed before merge.
+- [PR #15](https://github.com/alexcatdad/pr-nanny/pull/15) cut frontend bridge calls from 3,601 to 721 per hour visible and 1 hidden. [PR #16](https://github.com/alexcatdad/pr-nanny/pull/16) makes team discovery independently degradable and lowers estimated points per cycle at 50 teams from 157 to 63. Both passed all required checks; #16 had an independent security review with no blocking findings.
+- The icon, site favicon and Open Graph assets already match the branch-and-bell identity from PR #13. RC5 is prepared from main to carry #13 to #16 (VERSION only).
+- Not yet done: real macOS production qualification of RC5, Fedora KDE and additional Windows UI Automation. No physical tray, toast or sleep/resume evidence exists beyond what is stated above.
 
 See [QUALITY.md](QUALITY.md) for measured coverage, request budgets, security boundaries and native qualification limits.
