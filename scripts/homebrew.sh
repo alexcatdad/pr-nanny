@@ -14,7 +14,9 @@ case "$mode" in
   formula) [ "$#" -eq 3 ] || usage; VERSION=$1 LINUX_URL=$2 LINUX_SHA=$3 ;;
   both) [ "$#" -eq 5 ] || usage; VERSION=$1 MAC_URL=$2 MAC_SHA=$3 LINUX_URL=$4 LINUX_SHA=$5 ;;
 esac
-case "$VERSION" in *[!A-Za-z0-9._+-]*|'') echo "invalid version" >&2; exit 2;; esac
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+SOURCE_VERSION=$(sh "$ROOT/scripts/read-version.sh")
+[ "$VERSION" = "$SOURCE_VERSION" ] || { echo "requested version $VERSION does not match VERSION ($SOURCE_VERSION)" >&2; exit 2; }
 validate_archive() {
   url=$1 sha=$2
   case "$url" in https://*) ;; *) echo "archive URLs must use https" >&2; exit 2;; esac

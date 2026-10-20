@@ -1,31 +1,35 @@
-name: Publish qualified prerelease
+name: Publish qualified release
 on:
-  workflow_run:
+  workflow_run: # zizmor: ignore[dangerous-triggers] exact main push source and all required jobs are checked before using artifacts
     workflows: [Validate]
     types: [completed]
     branches: [main]
   workflow_dispatch:
     inputs:
       qualification_run_id:
-        description: Successful Validate push run on main with all five required jobs
+        description: Successful Validate push run on main with every required job passed
         required: true
         type: string
 permissions:
   contents: read
   actions: read
+  attestations: read
 concurrency:
-  group: release-0.1.0-rc.1
+  group: release-${{ github.repository }}-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   publish:
     if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: write
       actions: read
+      attestations: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Require complete qualification for the released source
         id: qualification
         env:
@@ -34,49 +38,106 @@ jobs:
         run: |
           sha=$(sh scripts/qualify-release.sh "$QUALIFICATION_RUN_ID")
           printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
-          if gh release view v0.1.0-rc.1 >/dev/null 2>&1; then
-            printf 'publish=false\n' >> "$GITHUB_OUTPUT"
-          else
-            printf 'publish=true\n' >> "$GITHUB_OUTPUT"
-          fi
-      - name: Use the qualified source for release metadata
-        if: steps.qualification.outputs.publish == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.qualification.outputs.sha }}
+          persist-credentials: false
+      - name: Reject a previously used release version
+        id: release_version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          version=$(sh scripts/read-version.sh)
+          tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            publish=false
+          else
+            set +e
+            git ls-remote --exit-code --refs origin "refs/tags/$tag" >/dev/null 2>&1
+            tag_status=$?
+            set -e
+            case "$tag_status" in
+              0) echo "Tag $tag exists without a release; refusing to reuse or move it." >&2; exit 1 ;;
+              2) publish=true ;;
+              *) echo 'Unable to verify that the release tag is unused.' >&2; exit 1 ;;
+            esac
+          fi
+          {
+            printf 'version=%s\n' "$version"
+            printf 'tag=%s\n' "$tag"
+            printf 'publish=%s\n' "$publish"
+          } >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: steps.qualification.outputs.publish == 'true'
+        if: steps.release_version.outputs.publish == 'true'
         with:
           run-id: ${{ github.event.workflow_run.id || inputs.qualification_run_id }}
           github-token: ${{ github.token }}
           pattern: package-*
           merge-multiple: true
           path: dist
-      - name: Verify all three qualified packages and generate installation manifests
-        if: steps.qualification.outputs.publish == 'true'
-        env:
-          QUALIFIED_SHA: ${{ steps.qualification.outputs.sha }}
-        run: |
-          set -eu
-          cd dist
-          test -f pr-nanny-0.1.0-rc.1-darwin-arm64.zip
-          test -f pr-nanny-0.1.0-rc.1-windows-x64.zip
-          test -f pr-nanny-0.1.0-rc.1-linux-x64.tar.gz
-          sha256sum -c ./*.sha256
-          sha256sum ./*.zip ./*.tar.gz > SHA256SUMS
-          printf 'Source: https://github.com/alexcatdad/pr-nanny/commit/%s\n' "$QUALIFIED_SHA" > SOURCE.txt
-          mac_sha=$(sha256sum pr-nanny-0.1.0-rc.1-darwin-arm64.zip | cut -d ' ' -f1)
-          linux_sha=$(sha256sum pr-nanny-0.1.0-rc.1-linux-x64.tar.gz | cut -d ' ' -f1)
-          base=https://github.com/alexcatdad/pr-nanny/releases/download/v0.1.0-rc.1
-          sh ../scripts/homebrew.sh cask 0.1.0-rc.1 "$base/pr-nanny-0.1.0-rc.1-darwin-arm64.zip" "$mac_sha" > pr-nanny-cask.rb
-          sh ../scripts/homebrew.sh formula 0.1.0-rc.1 "$base/pr-nanny-0.1.0-rc.1-linux-x64.tar.gz" "$linux_sha" > pr-nanny-formula.rb
-      - name: Publish unsigned release candidate
-        if: steps.qualification.outputs.publish == 'true'
+      - name: Verify exact-source attestations, packages and installation manifests
+        if: steps.release_version.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           QUALIFIED_SHA: ${{ steps.qualification.outputs.sha }}
+          VERSION: ${{ steps.release_version.outputs.version }}
         run: |
-          gh release create v0.1.0-rc.1 dist/* \
-            --target "$QUALIFIED_SHA" --prerelease \
-            --title 'PR Nanny 0.1.0 RC1 — unsigned prerelease' \
-            --notes-file .github/release-notes.md
+          set -eu
+          cd dist
+          test -f "pr-nanny-$VERSION-darwin-arm64.zip"
+          test -f "pr-nanny-$VERSION-windows-x64.zip"
+          test -f "pr-nanny-$VERSION-linux-x64.tar.gz"
+          sha256sum -c ./*.sha256
+          for archive in "pr-nanny-$VERSION-darwin-arm64.zip" "pr-nanny-$VERSION-windows-x64.zip" "pr-nanny-$VERSION-linux-x64.tar.gz"; do
+            gh attestation verify "$archive" --repo alexcatdad/pr-nanny \
+              --source-digest "$QUALIFIED_SHA" \
+              --signer-workflow alexcatdad/pr-nanny/.github/workflows/ci.yml
+          done
+          sha256sum ./*.zip ./*.tar.gz > SHA256SUMS
+          printf 'Source: https://github.com/alexcatdad/pr-nanny/commit/%s\n' "$QUALIFIED_SHA" > SOURCE.txt
+          mac_sha=$(sha256sum "pr-nanny-$VERSION-darwin-arm64.zip" | cut -d ' ' -f1)
+          linux_sha=$(sha256sum "pr-nanny-$VERSION-linux-x64.tar.gz" | cut -d ' ' -f1)
+          base="https://github.com/alexcatdad/pr-nanny/releases/download/v$VERSION"
+          sh ../scripts/homebrew.sh cask "$VERSION" "$base/pr-nanny-$VERSION-darwin-arm64.zip" "$mac_sha" > pr-nanny-cask.rb
+          sh ../scripts/homebrew.sh formula "$VERSION" "$base/pr-nanny-$VERSION-linux-x64.tar.gz" "$linux_sha" > pr-nanny-formula.rb
+      - name: Generate changelog from the previous release
+        if: steps.release_version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release_version.outputs.tag }}
+          QUALIFIED_SHA: ${{ steps.qualification.outputs.sha }}
+        run: |
+          set -eu
+          previous_tag=$(gh release list --limit 100 --json tagName,isDraft --jq '[.[] | select(.isDraft == false) | .tagName] | .[0] // empty')
+          if [ -n "$previous_tag" ]; then
+            generated=$(gh api -X POST repos/alexcatdad/pr-nanny/releases/generate-notes \
+              -f tag_name="$RELEASE_TAG" -f target_commitish="$QUALIFIED_SHA" \
+              -f previous_tag_name="$previous_tag" --jq '.body')
+          else
+            generated=$(gh api -X POST repos/alexcatdad/pr-nanny/releases/generate-notes \
+              -f tag_name="$RELEASE_TAG" -f target_commitish="$QUALIFIED_SHA" --jq '.body')
+          fi
+          {
+            cat .github/release-notes.md
+            printf '\n\n%s\n' "$generated"
+          } > dist/CHANGELOG.md
+      - name: Publish qualified release with generated notes
+        if: steps.release_version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFIED_SHA: ${{ steps.qualification.outputs.sha }}
+          RELEASE_TAG: ${{ steps.release_version.outputs.tag }}
+          VERSION: ${{ steps.release_version.outputs.version }}
+        run: |
+          set -eu
+          if case "${VERSION%%+*}" in *-*) true;; *) false;; esac; then
+            release_flags=(--prerelease --latest=false)
+            title="PR Nanny $VERSION — unsigned prerelease"
+          else
+            release_flags=(--latest)
+            title="PR Nanny $VERSION"
+          fi
+          gh release create "$RELEASE_TAG" dist/* \
+            --target "$QUALIFIED_SHA" "${release_flags[@]}" \
+            --title "$title" --notes-file dist/CHANGELOG.md
