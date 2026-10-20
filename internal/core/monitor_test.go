@@ -520,7 +520,9 @@ func TestReviewRemovalKeepsExplicitBellAcrossRestart(t *testing.T) {
 	n := &recorded{}
 	f := &sequenceFetcher{results: []model.FetchResult{{PullRequests: []model.PullRequest{requested}}, {PullRequests: []model.PullRequest{removed}}}}
 	creds := func(context.Context) (string, string, error) { return "", "account", nil }
-	m, _ := New(f, creds, s, n, model.DefaultSettings())
+	settings := model.DefaultSettings()
+	settings.Account = "account"
+	m, _ := New(f, creds, s, n, settings)
 	_ = m.Refresh(context.Background())
 	if err := m.SetBell(requested.ID, true); err != nil {
 		t.Fatal(err)
@@ -535,7 +537,7 @@ func TestReviewRemovalKeepsExplicitBellAcrossRestart(t *testing.T) {
 		t.Fatal("explicit bell was lost")
 	}
 	later := &sequenceFetcher{results: []model.FetchResult{{PullRequests: []model.PullRequest{changed}}, {PullRequests: []model.PullRequest{requested}}}}
-	restarted, _ := New(later, creds, s, n, model.DefaultSettings())
+	restarted, _ := New(later, creds, s, n, settings)
 	_ = restarted.Refresh(context.Background())
 	_ = restarted.Refresh(context.Background())
 	if got := n.list(); !equalEvents(got, []Event{EventCI, EventReviewRequested, EventCI}) {
