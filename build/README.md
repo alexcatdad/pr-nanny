@@ -11,13 +11,29 @@ frontend build reads the same root `VERSION` file. Packaging uses the
 from this same source tree. Run `scripts/verify-package.sh` after producing
 archives.
 
-The macOS ARM64 archive is ad-hoc signed for bundle integrity only. It has no
-Developer ID signature or notarization, so Gatekeeper may require the user to
-approve opening the prerelease. Windows is unsigned. Linux requires GTK4,
+CI's macOS ARM64 archive is an ad-hoc-signed input to local release signing.
+Published macOS betas are Developer ID signed and notarised; the DMG provides
+drag-to-Applications installation and the ZIP remains the Homebrew input.
+Windows also produces a per-user `*-setup.exe` with a Start Menu shortcut,
+uninstaller and Microsoft-signed WebView2 bootstrapper. Windows remains unsigned.
+Linux requires GTK4,
 WebKitGTK 6.0, glibc 2.39 or newer, and a Secret Service-compatible credential
 store. Linux binaries are built on Ubuntu 24.04. Its installer and uninstaller
 only add or remove files under the current user's XDG data and bin directories;
 settings and credentials remain untouched.
+
+Windows setup acceptance runs on the native Windows CI runner: install twice
+into a path containing spaces, verify the installed executable and shortcut,
+launch the isolated frontend/IPC smoke test, then uninstall and verify that
+synthetic user data survives. This runner already has WebView2; the missing-runtime
+bootstrapper path still requires separate acceptance.
+
+After signing and stapling the macOS app, create the DMG with
+`CODESIGN_IDENTITY='Developer ID Application: ...' sh scripts/package-dmg.sh SIGNED.zip VERSION dist`.
+Submit the DMG using the existing local notarytool Keychain profile, staple the
+accepted DMG, then run `sh scripts/verify-dmg.sh IMAGE.dmg VERSION SIGNED.zip`.
+Only compute its checksum after stapling. Verification checks the image and app
+signatures/tickets, the Applications link and the exact ZIP-contained app.
 
 Homebrew supports macOS and Linux (including WSL); it has no native Windows
 package support. `scripts/homebrew.sh cask VERSION URL SHA256` and

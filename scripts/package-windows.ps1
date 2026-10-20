@@ -90,3 +90,5 @@ Write-Output 'Removed the current-user Start Menu shortcut. Settings and credent
   Write-Output "Created $Archive"
 }
 finally { Remove-Item -LiteralPath $Stage -Recurse -Force -ErrorAction SilentlyContinue }
+
+& (Join-Path $PSScriptRoot 'package-installer-windows.ps1') -Version $Version
