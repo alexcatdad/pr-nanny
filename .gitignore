@@ -1,0 +1,10 @@
+/bin/
+/dist/
+/frontend/node_modules/
+/frontend/dist/
+/frontend/test-results/
+/frontend/playwright-report/
+/session-progress/
+/.tools/
+*.log
+.DS_Store

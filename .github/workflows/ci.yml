@@ -1,0 +1,57 @@
+name: Validate
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  native:
+    name: Native (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev libsecret-1-dev libxdo-dev xvfb dbus-x11
+      - name: Test Go packages
+        run: go test -race ./internal/...
+      - name: Build production native app
+        shell: bash
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '13.0'
+        run: |
+          mkdir -p bin
+          if [ "$RUNNER_OS" = Windows ]; then
+            go build -trimpath -tags production -ldflags '-s -w -H windowsgui' -o bin/pr-nanny.exe .
+          else
+            go build -trimpath -tags production -ldflags '-s -w' -o bin/pr-nanny .
+          fi
+      - name: Launch native smoke test
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            dbus-run-session -- xvfb-run -a ./bin/pr-nanny --smoke-test
+          elif [ "$RUNNER_OS" = Windows ]; then
+            ./bin/pr-nanny.exe --smoke-test
+          else
+            ./bin/pr-nanny --smoke-test
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: foundation-${{ runner.os }}-${{ runner.arch }}
+          path: bin/*
+          retention-days: 7
+          if-no-files-found: error
