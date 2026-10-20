@@ -141,3 +141,15 @@ jobs:
           gh release create "$RELEASE_TAG" dist/* \
             --target "$QUALIFIED_SHA" "${release_flags[@]}" \
             --title "$title" --notes-file dist/CHANGELOG.md
+      - name: Request an update in the existing Homebrew tap
+        if: steps.release_version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_ACTIONS_TOKEN }}
+          RELEASE_TAG: ${{ steps.release_version.outputs.tag }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo '::notice::Homebrew update requires HOMEBREW_TAP_ACTIONS_TOKEN (Actions: write on alexcatdad/homebrew-tap).'
+            echo 'Homebrew update was not dispatched: configure the scoped token or run the tap update workflow manually.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh workflow run update-pr-nanny.yml --repo alexcatdad/homebrew-tap -f release_tag="$RELEASE_TAG"

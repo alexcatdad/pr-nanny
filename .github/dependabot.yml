@@ -12,3 +12,15 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  - package-ecosystem: gomod
+    directory: /tools/security
+    schedule:
+      interval: weekly
+  - package-ecosystem: gomod
+    directory: /tools/lint
+    schedule:
+      interval: weekly
+  - package-ecosystem: gomod
+    directory: /tools/windowsresources
+    schedule:
+      interval: weekly

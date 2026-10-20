@@ -33,6 +33,8 @@ flowchart LR
 
 The UI calls explicit methods such as `GetSnapshot`, `SaveSettings`, `ConnectPAT`, `ConnectCLI`, `SetBell`, `SetLayout`, `Refresh`, `OpenPR`, and `HidePopup`. It uses Wails runtime `Call.ByName`; generated binding files are not required. No raw API client, generic command execution or filesystem operation is exposed. Stored tokens are never returned to the renderer. The user-entered PAT is passed directly to ConnectPAT and cleared from the input before awaiting the result. The GitHub client is a Go HTTP client and accepts only the production GitHub endpoint except for loopback endpoints injected by tests.
 
+`VERSION` is the authoritative SemVer source. Vite embeds it as application metadata, native packaging embeds it in Go and platform artifacts, and `--version` reports it with the VCS revision. Release workflows consume only fully qualified main-push artifacts and verify source-bound attestations before publication.
+
 `SaveSettings` accepts non-authentication preferences only. Authentication method/account values are changed by `ConnectCLI` or validated `ConnectPAT`. PAT validation precedes credential replacement; the token is cleared from the app operation and never returned to the snapshot. PAT storage errors do not trigger another storage mechanism.
 
 ## State and notification lifecycle
@@ -46,6 +48,8 @@ A bounded single-worker dispatcher keeps native permission requests and delivery
 ## Renderer and production boundary
 
 Wails embeds `frontend/dist`; production builds do not fetch application code from the network. `internal/websecurity.Middleware` sets a restrictive CSP and allows only the minimal Wails runtime binding operations needed by the app. The API is served through Wails' webview transport, not a separate application server.
+
+This restricts normal resource/connection requests and generic runtime calls. Pinned Wails beta.33 does not provide a supported cross-platform top-level navigation veto; CSP does not fully sandbox an already compromised renderer. See [SECURITY.md](SECURITY.md) for the demonstrated containment limit.
 
 `scripts/package.sh` and `scripts/package-windows.ps1` build with `-tags production`. The production build disables development preview. `production_guard.go` makes a production build with `mcp`, `devtools`, or `server` tags fail to compile. MCP support is limited to an explicitly tagged development build, and its CSP may allow only the configured loopback callback port. Browser fixtures are gated from production builds.
 

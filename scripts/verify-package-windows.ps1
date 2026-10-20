@@ -1,5 +1,6 @@
 param([Parameter(Mandatory=$true)][string]$Archive)
 $ErrorActionPreference = 'Stop'
+$Version = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../VERSION')).Trim()
 $Archive = (Resolve-Path $Archive).Path
 $ChecksumFile = "$Archive.sha256"
 if (-not (Test-Path -LiteralPath $ChecksumFile)) { throw "Missing SHA256 sidecar: $ChecksumFile" }
@@ -34,10 +35,23 @@ try {
     $Stream.Position = $PEOffset + 24 + 68
     if ($Reader.ReadUInt16() -ne 2) { throw 'Executable is not a Windows GUI application.' }
   } finally { $Stream.Dispose() }
+  $ResourceVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($Binary)
+  if ($ResourceVersion.ProductVersion -cne $Version) { throw 'Windows ProductVersion does not match VERSION.' }
+  $CoreVersion = ($Version -split '[-+]')[0] + '.0'
+  if ($ResourceVersion.FileVersion -cne $CoreVersion) { throw 'Windows FileVersion does not match the numeric release version.' }
   $BuildInfo = (& go version -m $Binary 2>&1 | Out-String)
   if ($LASTEXITCODE -ne 0) { throw 'Unable to read Go executable build metadata.' }
   if ($BuildInfo -notmatch '-tags=production') { throw 'Production build tag is missing.' }
   if ($BuildInfo -match '(?i)-tags=[^\s]*(mcp|devtools|server)') { throw 'Forbidden development build tag found.' }
+  $VersionOutput = Join-Path $Temp 'version.txt'
+  $VersionProcess = Start-Process -FilePath $Binary -ArgumentList '--version' -RedirectStandardOutput $VersionOutput -PassThru
+  if (-not $VersionProcess.WaitForExit(10000)) {
+    $VersionProcess.Kill()
+    throw 'Version probe timed out.'
+  }
+  if ($VersionProcess.ExitCode -ne 0 -or -not (Get-Content -Raw -LiteralPath $VersionOutput).StartsWith("PR Nanny $Version (")) {
+    throw 'Runtime version does not match VERSION.'
+  }
   Write-Host 'Windows package checks passed.'
 } finally {
   $Zip.Dispose()

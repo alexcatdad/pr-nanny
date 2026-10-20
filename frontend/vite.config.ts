@@ -29,6 +29,7 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     coverage: {
       provider: 'v8',
+      reporter: ['text', 'html', 'lcov', 'json-summary'],
       include: ['src/App.svelte', 'src/components/*.svelte', 'src/lib/bridge.ts', 'src/lib/format.ts'],
       exclude: ['src/**/*.test.ts'],
       thresholds: { lines: 75 },

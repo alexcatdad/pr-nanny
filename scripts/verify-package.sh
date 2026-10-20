@@ -2,6 +2,7 @@
 set -eu
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 DIST=${1:-"$ROOT/dist"}
+VERSION=$(sh "$ROOT/scripts/read-version.sh")
 found=0
 verify_build_tags() {
   binary=$1
@@ -10,6 +11,13 @@ verify_build_tags() {
   if printf '%s\n' "$buildinfo" | grep -Eiq -- '-tags=[^[:space:]]*(mcp|devtools|server)'; then
     echo "forbidden development build tag found in $binary" >&2; return 1
   fi
+  case "$(uname -s):$name" in
+    Darwin:*-darwin-arm64.zip|Linux:*-linux-x64.tar.gz)
+      chmod u+x "$binary"
+      actual=$("$binary" --version)
+      case "$actual" in "PR Nanny $VERSION ("*")") ;; *) echo 'Runtime version does not match VERSION' >&2; return 1;; esac
+      ;;
+  esac
 }
 for checksum in "$DIST"/*.sha256; do
   [ -f "$checksum" ] || continue

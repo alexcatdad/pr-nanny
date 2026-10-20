@@ -34,8 +34,8 @@ class PrNanny < Formula
   desc "Passive GitHub pull-request monitor"
   homepage "https://github.com/alexcatdad/pr-nanny"
   url "$LINUX_URL"
-  sha256 "$LINUX_SHA"
   version "$VERSION"
+  sha256 "$LINUX_SHA"
   license "MIT"
 
   depends_on :linux
@@ -49,7 +49,10 @@ class PrNanny < Formula
   end
 
   def caveats
-    "Requires the distribution's GTK4 and WebKitGTK 6.0 runtime libraries and glibc 2.39 or newer. Linux packages are built on Ubuntu 24.04. Native Windows is not supported by Homebrew."
+    <<~EOS
+      Requires the distribution's GTK4 and WebKitGTK 6.0 runtime libraries and glibc 2.39 or newer.
+      Linux packages are built on Ubuntu 24.04. Native Windows is not supported by Homebrew.
+    EOS
   end
 
   test do

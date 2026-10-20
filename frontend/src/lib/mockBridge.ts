@@ -41,7 +41,18 @@ export const mockBridge = {
     const captured = structuredClone(state);
     if (stalePoll && snapshotCount === 2) {
       captured.settings.layout = 'all';
-      await new Promise((resolve) => setTimeout(resolve, 450));
+      const testWindow = window as Window & {
+        __PR_NANNY_STALE_POLL_PENDING__?: boolean;
+        __PR_NANNY_RELEASE_STALE_POLL__?: () => void;
+      };
+      testWindow.__PR_NANNY_STALE_POLL_PENDING__ = true;
+      await new Promise<void>((resolve) => {
+        testWindow.__PR_NANNY_RELEASE_STALE_POLL__ = () => {
+          testWindow.__PR_NANNY_STALE_POLL_PENDING__ = false;
+          delete testWindow.__PR_NANNY_RELEASE_STALE_POLL__;
+          resolve();
+        };
+      });
     }
     return captured;
   },

@@ -159,10 +159,21 @@ test('failed settings save stays actionable and prevents a second save while pen
 test('an older poll cannot overwrite a newer saved layout', async ({ page }) => {
   await page.goto('/?fixtureStalePoll=1');
   await expect(page.getByText('Connected as octocat')).toBeVisible();
-  await page.waitForTimeout(1150);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as Window & { __PR_NANNY_STALE_POLL_PENDING__?: boolean }).__PR_NANNY_STALE_POLL_PENDING__,
+      ),
+    )
+    .toBe(true);
   await page.getByRole('button', { name: 'Tabs' }).click();
   await expect(page.getByRole('button', { name: 'Tabs' })).toHaveAttribute('aria-pressed', 'true');
-  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    const release = (window as Window & { __PR_NANNY_RELEASE_STALE_POLL__?: () => void })
+      .__PR_NANNY_RELEASE_STALE_POLL__;
+    if (!release) throw new Error('The delayed stale poll is not pending.');
+    release();
+  });
   await expect(page.getByRole('button', { name: 'Tabs' })).toHaveAttribute('aria-pressed', 'true');
 });
 
