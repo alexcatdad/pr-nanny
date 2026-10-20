@@ -176,7 +176,7 @@ test('an older poll cannot overwrite a newer saved layout', async ({ page }) => 
   await page.clock.pauseAt(new Date('2026-01-01T00:01:00Z'));
   await page.goto('/?fixtureStalePoll=1');
   await expect(page.getByText('Connected as octocat')).toBeVisible();
-  await page.clock.runFor(1000);
+  await page.clock.runFor(5000);
   await expect
     .poll(() =>
       page.evaluate(

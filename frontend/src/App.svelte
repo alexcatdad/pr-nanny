@@ -14,10 +14,18 @@ let error = $state('');
 let loading = $state(true);
 let busy = $state(false);
 let now = $state(Date.now());
-let timer: ReturnType<typeof setInterval> | undefined;
+// Relative-time clock: local only, never calls the bridge.
+const CLOCK_MS = 1000;
+// Snapshot sync: bounded poll while the popup is visible, none while hidden.
+const SYNC_MS = 5000;
+let clockTimer: ReturnType<typeof setInterval> | undefined;
+let syncTimer: ReturnType<typeof setInterval> | undefined;
 let alive = true;
 let stateVersion = 0;
 let snapshotRequest = 0;
+let syncInFlight = false;
+let lastSerialized = '';
+const visible = () => document.visibilityState !== 'hidden';
 const prs = $derived(
   [...(snapshot?.pullRequests ?? [])].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
 );
@@ -48,21 +56,58 @@ const statusMessage = $derived(
     '',
 );
 
+// Skips the assignment when nothing changed so unchanged polls cause no rerender.
+function apply(next: Snapshot) {
+  const serialized = JSON.stringify(next);
+  if (serialized === lastSerialized) return;
+  lastSerialized = serialized;
+  snapshot = next;
+}
 async function sync() {
   const request = ++snapshotRequest;
   const version = stateVersion;
+  syncInFlight = true;
   try {
     const next = await bridge.GetSnapshot();
     if (alive && !busy && request === snapshotRequest && version === stateVersion) {
-      snapshot = next;
+      apply(next);
       error = '';
     }
   } catch {
     if (alive && !busy && request === snapshotRequest && version === stateVersion)
       error = 'Could not reach PR Nanny. Try refreshing.';
   } finally {
-    if (alive && request === snapshotRequest) loading = false;
+    if (alive && request === snapshotRequest) {
+      loading = false;
+      syncInFlight = false;
+    }
   }
+}
+function tickClock() {
+  now = Date.now();
+}
+function stopTimers() {
+  if (clockTimer) clearInterval(clockTimer);
+  if (syncTimer) clearInterval(syncTimer);
+  clockTimer = syncTimer = undefined;
+}
+function startTimers() {
+  stopTimers();
+  clockTimer = setInterval(tickClock, CLOCK_MS);
+  syncTimer = setInterval(() => {
+    if (!syncInFlight) void sync();
+  }, SYNC_MS);
+}
+// Becoming visible or focused (popup reopened): refresh the clock and snapshot now.
+function resume() {
+  if (!alive || !visible()) return;
+  tickClock();
+  startTimers();
+  void sync();
+}
+function onVisibility() {
+  if (visible()) resume();
+  else stopTimers();
 }
 async function act(action: () => Promise<Snapshot>): Promise<Snapshot> {
   const version = ++stateVersion;
@@ -70,7 +115,7 @@ async function act(action: () => Promise<Snapshot>): Promise<Snapshot> {
   error = '';
   try {
     const next = await action();
-    if (alive && version === stateVersion) snapshot = next;
+    if (alive && version === stateVersion) apply(next);
     return next;
   } catch {
     if (alive && version === stateVersion) error = 'That action did not complete. Please try again.';
@@ -117,10 +162,9 @@ function back() {
 }
 onMount(() => {
   void sync();
-  timer = setInterval(() => {
-    now = Date.now();
-    void sync();
-  }, 1000);
+  if (visible()) startTimers();
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('focus', resume);
   const keydown = (event: KeyboardEvent) => {
     if (event.key === 'Escape') {
       void hide();
@@ -135,7 +179,9 @@ onMount(() => {
   document.addEventListener('click', outside);
   return () => {
     alive = false;
-    if (timer) clearInterval(timer);
+    stopTimers();
+    document.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('focus', resume);
     window.removeEventListener('keydown', keydown);
     document.removeEventListener('click', outside);
   };
