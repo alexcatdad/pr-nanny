@@ -29,7 +29,12 @@ type PullRequest struct {
 	// Request node IDs detect removed-and-recreated requests between polling cycles.
 	// They never cross the renderer boundary.
 	ReviewRequestIDs []string `json:"-"`
-	Bell             bool     `json:"bell"`
+	// UnverifiedTeamRequestIDs lists team review-request IDs that could not be
+	// matched to the viewer because team discovery was degraded. They stay in Go
+	// so the monitor can carry forward earlier matches instead of inferring that
+	// the requests were removed.
+	UnverifiedTeamRequestIDs []string `json:"-"`
+	Bell                     bool     `json:"bell"`
 }
 type EventPreferences struct {
 	CI              bool `json:"ci"`
@@ -60,10 +65,20 @@ type Snapshot struct {
 	Message      string        `json:"message"`
 	LastRefresh  *time.Time    `json:"lastRefresh,omitempty"`
 	Refreshing   bool          `json:"refreshing"`
+	// Degraded is true when the last refresh succeeded only partially (for example
+	// team review requests could not be checked). Message then explains why.
+	Degraded bool `json:"degraded"`
 }
 
-// FetchResult is a complete successful fetch. Inaccessible IDs retain their prior baseline.
+// FetchResult is a successful fetch. Inaccessible IDs retain their prior baseline.
+// Warnings is non-empty when a capability (currently team review discovery) was
+// unavailable; the result is then incomplete and must not be presented as a full
+// sync. Warnings are fixed text and never contain organization or team names.
 type FetchResult struct {
 	PullRequests    []PullRequest
 	InaccessibleIDs []string
+	Warnings        []string
 }
+
+// WarningTeamReview is the fixed, non-sensitive degraded-capability message.
+const WarningTeamReview = "Team review requests could not be checked with the current GitHub permissions; showing direct and authored pull requests only."
