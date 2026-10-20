@@ -91,13 +91,14 @@ jobs:
           test -f "pr-nanny-$VERSION-darwin-arm64.zip"
           test -f "pr-nanny-$VERSION-windows-x64.zip"
           test -f "pr-nanny-$VERSION-linux-x64.tar.gz"
+          test -f "pr-nanny-$VERSION-windows-x64-setup.exe"
           sha256sum -c ./*.sha256
-          for archive in "pr-nanny-$VERSION-darwin-arm64.zip" "pr-nanny-$VERSION-windows-x64.zip" "pr-nanny-$VERSION-linux-x64.tar.gz"; do
+          for archive in "pr-nanny-$VERSION-darwin-arm64.zip" "pr-nanny-$VERSION-windows-x64.zip" "pr-nanny-$VERSION-linux-x64.tar.gz" "pr-nanny-$VERSION-windows-x64-setup.exe"; do
             gh attestation verify "$archive" --repo alexcatdad/pr-nanny \
               --source-digest "$QUALIFIED_SHA" \
               --signer-workflow alexcatdad/pr-nanny/.github/workflows/ci.yml
           done
-          sha256sum ./*.zip ./*.tar.gz > SHA256SUMS
+          sha256sum ./*.zip ./*.tar.gz ./*-setup.exe > SHA256SUMS
           printf 'Source: https://github.com/alexcatdad/pr-nanny/commit/%s\n' "$QUALIFIED_SHA" > SOURCE.txt
           mac_sha=$(sha256sum "pr-nanny-$VERSION-darwin-arm64.zip" | cut -d ' ' -f1)
           linux_sha=$(sha256sum "pr-nanny-$VERSION-linux-x64.tar.gz" | cut -d ' ' -f1)

@@ -1,4 +1,20 @@
-# Optional release signing
+# Local release signing
+
+Published macOS releases are signed on the maintainer's Mac. The existing
+Developer ID identity and `usb-boop-notary` credential profile stay in the local
+Keychain; Apple keys and passwords are not uploaded to GitHub. RC6 completed
+this process with Apple acceptance, a stapled app ticket and Gatekeeper acceptance.
+
+For installer betas, sign and notarise the exact qualified macOS CI archive,
+staple its app, and recreate the ZIP. Then use `scripts/package-dmg.sh` to wrap
+that unchanged app with an Applications link. Sign, notarise and staple the DMG
+itself, and verify it against the ZIP with `scripts/verify-dmg.sh` before creating
+the final checksum. Do not reuse a prior submission for a changed artifact.
+
+The Windows Setup EXE is built and install/reinstall/uninstall-tested by native
+CI. It remains unsigned until an Authenticode identity is supplied.
+
+## Optional CI signing alternative
 
 `.github/workflows/sign.yml` is a manual, optional step for signing qualified `0.1.0-rc.1` packages. It does not build or change the source package. It accepts only an Actions run whose API metadata identifies the `Validate` workflow at `.github/workflows/ci.yml`, a successful `push` to `main`, and a full 40-character source commit SHA. Each signing job checks out that exact SHA and downloads its platform package from that same run using the read-only Actions token.
 
@@ -28,8 +44,8 @@ The Windows job signs the executable with SHA-256 and an RFC 3161 timestamp, ver
 
 If a platform's secrets are missing, the preflight emits an Actions notice and that platform job is skipped without failing the other configured platform. No credentials are required for unsigned validation builds. Signing jobs have only `actions: read` and `contents: read` permissions. They upload signed packages as 14-day Actions artifacts named `signed-package-macOS-ARM64` and `signed-package-Windows-X64`; they never create or publish GitHub Releases.
 
-## Current status
+## CI signing status
 
-No signing or notarization operation has been executed. Signing credentials have not been supplied, and this repository currently has no published signed packages. The existing macOS prerelease archive is ad-hoc signed only; the Windows archive is unsigned. Do not treat successful YAML validation or a passing unsigned CI run as evidence that certificate import, signing, notarization, Gatekeeper, or Authenticode has run successfully.
+The optional CI signing workflow has not been executed; its Apple and Windows signing secrets have not been supplied. Local macOS signing is independently verified. Passing YAML validation or an unsigned CI run does not establish CI certificate import, notarisation, Gatekeeper or Authenticode acceptance.
 
 Apple's [notarization guide](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution) documents `notarytool` and ticket stapling. Microsoft's [SignTool reference](https://learn.microsoft.com/en-us/windows/win32/seccrypto/signtool) documents the SHA-256 file and timestamp digest requirements and signature verification commands.
