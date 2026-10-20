@@ -45,3 +45,11 @@ Complete the focused Homebrew installation CI PR, integrate the static site/comm
 - Independent source security review of the integrated runtime/workflow/site changes found no actionable new vulnerability. Quality review verified the CRLF fixture, traced Go CodeQL build and deterministic stale-poll regression. Maintainer feedback on site copy, dark links, focus and tablet layout was addressed.
 
 Next: finish the Homebrew installation checks, integrate the site after quality gates permit, verify the exact-main RC2 publication and deployed Pages result, then record completed-run timing and artifacts. Missing cross-repository dispatch credentials remain an explicit setup prerequisite rather than an invented secret.
+
+## Delivery checkpoint — 08:35 UTC
+
+- Quality PR #5 merged as `0b7e9fd1bbf75f552f3f16b93e770a39a8c40335`. Its exact-head run passed all required checks on macOS ARM64, Windows x64 and Linux x64.
+- Site/community PR #6 targets main, includes the qualified main commit and has native auto-merge enabled. Its required checks own integration; no bypass is configured.
+- [Homebrew installation PR #7](https://github.com/alexcatdad/homebrew-tap/pull/7) merged as `b386e883` after all three exact-head checks passed, including real Homebrew cask installation/removal on macOS ARM64 and formula installation/test/removal on Ubuntu 24.04 x64. These do not claim GUI launch through Homebrew.
+- At the final actionable check, [main qualification run 39394175301](https://github.com/alexcatdad/pr-nanny/actions/runs/39394175301) was still running. RC2 was not yet published; exact-main attestations and publication remain external prerequisites. Pages deployment likewise awaits site integration. No session is kept active solely to wait for these workflows.
+- After a successful RC2 publication, dispatch the tap's `update-pr-nanny.yml` with `release_tag=v0.1.0-rc.2`, then review and merge its manifest PR after checks. Automatic cross-repository dispatch still needs the documented scoped token.
