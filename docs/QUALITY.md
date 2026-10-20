@@ -17,7 +17,7 @@ Race-enabled Go core coverage is 82.8% of statements. Deduplicated package cover
 | storage | 85.0% |
 | websecurity | 96.8% |
 
-Frontend V8 coverage: 87.58% lines, 88% statements, 68.38% branches and 85.47% functions. Settings authentication success paths are exercised through rendered component tests; Settings line coverage is 93.1%. Coverage includes application/components, bridge and formatters, with synthetic test fixtures outside the production app.
+Frontend V8 coverage: 87.63% lines, 88% statements, 68.15% branches and 85.47% functions. Settings authentication success paths are exercised through rendered component tests; Settings line coverage is 93.1%. Coverage includes application/components, bridge and formatters, with synthetic test fixtures outside the production app.
 
 `sh scripts/coverage-go.sh` generates an atomic race profile, HTML and function summary with an 80% core floor. `pnpm test:coverage` in frontend generates HTML, LCOV and JSON summaries with a 75% line floor. CI retains both reports and publishes readable job summaries.
 
@@ -68,3 +68,21 @@ On macOS ARM64, the actual RC2 release ZIP's SHA-256 and source/workflow attesta
 Dogfooding reproduced the refresh text `Updated now ago`. The next prerelease changes that text to `Updated just now`; a rendered, clock-controlled regression first failed on RC2's behavior, then passed for both fresh and one-minute-old updates. RC2 remains unchanged.
 
 The [RC2 Windows native job](https://github.com/alexcatdad/pr-nanny/actions/runs/39394175301/job/118532874621) passed credential-store roundtrip, embedded WebView2/IPC launch, popup hide/show via native tray methods, autostart enable/status/disable/status, notification authorization/two synthetic sends, PE/runtime/package integrity, Start Menu installation/removal and PowerShell analysis. It does not establish physical tray interaction or visual toast delivery. No Fedora KDE graphical session is exposed by this task's available host/surface configuration; no VM or infrastructure was provisioned for testing.
+
+### Bounded production runtime sample
+
+A 301-second real-time RC2 run on macOS ARM64 collected 21 process samples at 15-second intervals with live 60-second GitHub polling. Normal desktop use and popup/focus changes were possible during this window; this is not a controlled hidden-window idle benchmark. Main-process cumulative CPU increased by 1.63 seconds (0.54% of one core). Two same-user, near-simultaneously started WebKit processes increased by 1.36 seconds (WebContent, 0.45%) and 0.01 seconds (Networking, below 0.01%); combined average was approximately 1.00% of one core.
+
+RSS ranged from 103.2–108.3 MiB for the app, 56.8–78.0 MiB for WebContent and 7.8–8.9 MiB for Networking (summed 168.2–191.9 MiB). Shared pages can be counted more than once. Main RSS remained approximately flat; the renderer grew about 21 MiB during the short window, which does not by itself demonstrate either a leak or prolonged stability. Helper association is correlated by user/start time rather than positively attributed: the available process-responsibility query requires unavailable root access. No telemetry or persistent monitoring service was added; the temporary sampler and raw CSV were removed.
+
+After the copy change, local validation passes 11 unit tests, all 11 Playwright tests, frontend type checks, Go core race tests, production native adapter race tests, and the macOS production package/integrity/development-capability checks. Frontend coverage is 87.63% lines, 88% statements, 68.15% branches and 85.47% functions. The synthetic README and site screenshots were regenerated for the new text/version.
+
+A separate 120-second hidden-popup polling sample collected nine readings at 15-second intervals after Escape dismissed the window. Main CPU increased by 0.26 seconds (0.22% of one core), WebContent by 0.36 seconds (0.30%) and Networking by less than the cumulative timer's 0.01-second granularity; combined average was 0.52%. RSS ranges were 102.2–107.2 MiB main, 74.5–80.5 MiB WebContent and 7.8–8.5 MiB Networking (summed 186.0–195.6 MiB, subject to shared-page double counting). This is bounded idle evidence, not a long-duration leak test.
+
+### Manual desktop acceptance and shutdown
+
+Physical menu-bar clicking was confirmed to anchor the popup beneath its icon. The centered opens observed when automation directly raised the app were not status-item clicks; no tray positioning change was made. A bell was enabled only for this task's public PR #9. Its live status changed from Running to Passed, and visible native “CI status changed” notification delivery was confirmed. The test bell was restored to its original off state; other bells were left unchanged. Escape dismissed the popup. Normal application-menu Quit removed the main process and both sampled WebKit processes, verified through process inspection.
+
+Whole-system sleep/resume and actual network disconnection were not forced on the active desktop. The deterministic outage/recovery and polling-wakeup tests remain application-level evidence, not substitutes for those physical-session checks. Full Fedora KDE graphical acceptance remains unavailable in this task's exposed host/surface configuration.
+
+Three fresh invocations of the installed RC2 bundle's isolated `--smoke-test` completed in 1.11, 1.07 and 1.07 seconds (median 1.07 seconds), including its deliberate 500 ms post-IPC verification delay. Main-process maximum RSS was 122,437,632 / 122,355,712 / 122,093,568 bytes. These measure bundled frontend/Go IPC readiness with temporary state and warm system caches; they do not measure authenticated cold-start completion or include WebKit helpers. A subsequent normal app restart reconnected through the saved CLI method, rediscovered PRs and retained the restored bell preference.
