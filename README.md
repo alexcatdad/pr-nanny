@@ -4,7 +4,7 @@
 
 PR Nanny is a passive GitHub.com pull-request monitor that lives in the system tray. It reads open pull requests authored by you or requesting your individual or team review, shows their approval and CI summaries, and can send local notifications. It never writes to GitHub or changes subscriptions.
 
-> **PR Nanny is prerelease software.** The release workflow publishes only after all native, frontend and security gates pass on the exact source commit. See [Releases](https://github.com/alexcatdad/pr-nanny/releases) for available downloads and [Actions](https://github.com/alexcatdad/pr-nanny/actions/workflows/ci.yml) for qualification results. Artifacts are unsigned except for ad-hoc macOS bundle signing; Developer ID signing and notarization are not configured.
+> **PR Nanny is beta software.** See [Releases](https://github.com/alexcatdad/pr-nanny/releases) for published downloads and [Actions](https://github.com/alexcatdad/pr-nanny/actions/workflows/ci.yml) for exact-source qualification. Published macOS distributions use Developer ID signing and Apple notarisation. Windows distributions are unsigned.
 
 ## Screenshots
 
@@ -34,15 +34,16 @@ CI summaries combine check runs and commit statuses. A failure takes precedence 
 
 Qualified release archives use the version from [`VERSION`](VERSION):
 
-- `pr-nanny-VERSION-darwin-arm64.zip` — macOS 13 or newer, Apple Silicon.
-- `pr-nanny-VERSION-windows-x64.zip` — Windows 10/11 x64 with Microsoft Edge WebView2 Runtime.
+- **macOS:** `pr-nanny-VERSION-darwin-arm64.dmg` — macOS 13 or newer, Apple Silicon. Open the DMG and drag **PR Nanny.app** onto **Applications**.
+- **Windows:** `pr-nanny-VERSION-windows-x64-setup.exe` — Windows 10/11 x64. Run Setup; it installs for your account, adds a Start Menu entry and supplies Microsoft WebView2 when missing. Removing the app through Windows Settings preserves preferences and credentials.
+- Portable `.zip` archives remain available for macOS and Windows.
 - `pr-nanny-VERSION-linux-x64.tar.gz` — Linux x64 with glibc 2.39 or newer, GTK4, WebKitGTK 6, and a Secret Service-compatible credential store such as GNOME Keyring or KWallet with Secret Service enabled. Ubuntu 24.04 and current Fedora releases are the target environments.
 
 Download qualified archives from [Releases](https://github.com/alexcatdad/pr-nanny/releases). Before a release qualifies, each successful native CI job provides a `package-*` workflow artifact for testing. Verify the adjacent `.sha256` file or release `SHA256SUMS` before installing. A successful individual platform job does not establish qualification of the other platforms.
 
-On macOS, unzip the archive and move `PR Nanny.app` to Applications. The app is ad-hoc signed for bundle integrity, not Developer ID signed or notarized; macOS may require explicit approval to open it.
+The macOS app and DMG are Developer ID signed, notarised and stapled before publication. Signing credentials stay in the maintainer's local Keychain. The ZIP remains available for Homebrew and portable installation.
 
-On Windows, unzip and run `install.ps1` to add a current-user Start Menu shortcut, then launch PR Nanny. The executable is unsigned and may prompt for confirmation. `uninstall.ps1` removes only that shortcut.
+The Windows installer and executable are unsigned and may show a publisher or SmartScreen warning. The installer requires an internet connection only if it needs to install WebView2. The optional portable ZIP includes `install.ps1` and `uninstall.ps1` for shortcut management.
 
 On Linux, extract the archive, run `./install.sh` from its extracted directory, and ensure `~/.local/bin` is on `PATH`. The installer adds the app and desktop entry for the current user. Run `./uninstall.sh` in the same directory to remove those application files.
 

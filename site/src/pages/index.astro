@@ -1,9 +1,12 @@
 ---
+import download from '../release.json';
 const base = `${import.meta.env.BASE_URL}/`;
 const releases = 'https://github.com/alexcatdad/pr-nanny/releases';
+const downloadBase = `https://github.com/alexcatdad/pr-nanny/releases/download/v${download.version}/pr-nanny-${download.version}`;
+const macDownload = `${downloadBase}-${download.macos}`;
+const windowsDownload = `${downloadBase}-${download.windows}`;
 const source = 'https://github.com/alexcatdad/pr-nanny';
 const contributing = `${source}/blob/main/CONTRIBUTING.md`;
-const changelog = releases;
 const title = 'PR Nanny — Your pull requests, quietly in view';
 const description = 'A small native tray app for authored PRs and reviews waiting on you. Read-only, local, and open source.';
 ---
@@ -48,8 +51,9 @@ const description = 'A small native tray app for authored PRs and reviews waitin
           <h1 id="hero-title">Somebody should keep an eye on your pull requests.</h1>
           <p class="lede">PR Nanny lives in your system tray. It watches the PRs you opened and the reviews waiting on you, shows approval and CI at a glance, and rings only when you ask it to. It never writes to GitHub.</p>
           <div class="actions">
-            <a class="button" href={releases} target="_blank" rel="noreferrer">Download the latest release</a>
-            <a class="plain" href="#install">Install with Homebrew</a>
+            <a class="button" href={macDownload}>Download for macOS</a>
+            <a class="button" href={windowsDownload}>Download for Windows</a>
+            <a class="plain" href="#install">Installation instructions</a>
           </div>
           <p class="fine">macOS 13+ on Apple Silicon, Windows 10/11 x64, Linux x64.</p>
         </div>
@@ -86,6 +90,25 @@ const description = 'A small native tray app for authored PRs and reviews waitin
       <section class="install" id="install" aria-labelledby="install-title">
         <h2 id="install-title">Install</h2>
         <p class="sub">PR Nanny is a prerelease. Builds and checksums are listed with each <a href={releases} target="_blank" rel="noreferrer">release</a>.</p>
+        <div class="platforms">
+          <article>
+            <h3>macOS</h3>
+            <a class="plain" href={macDownload}>Download {download.installers ? 'DMG' : 'ZIP'} · Apple Silicon</a>
+            <p>macOS 13 or newer. {download.installers ? 'Open the DMG and drag PR Nanny onto Applications. Eject the image, then open PR Nanny from Applications.' : 'Unzip the download and move PR Nanny.app to Applications.'}</p>
+            <p>Developer ID signed and notarised by Apple. No Homebrew required.</p>
+          </article>
+          <article>
+            <h3>Windows</h3>
+            <a class="plain" href={windowsDownload}>Download {download.installers ? 'Setup.exe' : 'ZIP'} · Windows x64</a>
+            <p>Windows 10/11 x64. {download.installers ? 'Run Setup, then open PR Nanny from the Start Menu. Setup installs WebView2 if needed.' : 'Unzip the archive and run pr-nanny.exe. WebView2 Runtime is required.'}</p>
+            <p>The Windows build is unsigned and may show a publisher warning.</p>
+          </article>
+          <article>
+            <h3>Linux</h3>
+            <p>x64 with glibc 2.39+, GTK4, WebKitGTK 6, and a Secret Service-compatible credential store.</p>
+            <p>Run <code>./install.sh</code> from the extracted archive and make sure <code>~/.local/bin</code> is on your <code>PATH</code>.</p>
+          </article>
+        </div>
         <div class="brew">
           <div>
             <h3>Homebrew on macOS</h3>
@@ -98,24 +121,7 @@ brew install --cask alexcatdad/tap/pr-nanny</code></pre>
 brew install alexcatdad/tap/pr-nanny</code></pre>
           </div>
         </div>
-        <p class="fine">Homebrew on Windows installs the Linux app in WSL. For a native Windows install, use the ZIP from the release. <a href="https://github.com/alexcatdad/pr-nanny/blob/main/build/README.md" target="_blank" rel="noreferrer">Homebrew notes</a></p>
-        <div class="platforms">
-          <article>
-            <h3>macOS</h3>
-            <p>Apple Silicon, macOS 13 or newer. Unzip the download and move <code>PR Nanny.app</code> to Applications.</p>
-            <p>The app is ad-hoc signed, not Developer ID signed or notarized, so macOS may ask you to approve opening it.</p>
-          </article>
-          <article>
-            <h3>Windows</h3>
-            <p>Windows 10/11 x64 with the Microsoft Edge WebView2 Runtime. Unzip the archive and run <code>install.ps1</code> to add a Start Menu shortcut for your account.</p>
-            <p>The executable is unsigned and may prompt for confirmation.</p>
-          </article>
-          <article>
-            <h3>Linux</h3>
-            <p>x64 with glibc 2.39+, GTK4, WebKitGTK 6, and a Secret Service-compatible credential store.</p>
-            <p>Run <code>./install.sh</code> from the extracted archive and make sure <code>~/.local/bin</code> is on your <code>PATH</code>.</p>
-          </article>
-        </div>
+        <p class="fine">Homebrew is optional. Homebrew on Windows installs the Linux app in WSL; use the Windows download above for the native app. <a href="https://github.com/alexcatdad/pr-nanny/blob/main/build/README.md" target="_blank" rel="noreferrer">Homebrew notes</a></p>
         <p class="fine">A build working on one platform does not mean the others are qualified.</p>
       </section>
     </main>
