@@ -1,4 +1,7 @@
-import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { expect, test } from '@playwright/test';
+
+const appVersion = readFileSync(new URL('../../VERSION', import.meta.url), 'utf8').trim();
 
 test('shows grouped PRs, renders untrusted text safely, and keeps long fields inside the popup', async ({ page }) => {
   await page.goto('/');
@@ -7,20 +10,44 @@ test('shows grouped PRs, renders untrusted text safely, and keeps long fields in
   await expect(page.locator('.title img, .title script')).toHaveCount(0);
   await expect(page.getByText(/<img src=x onerror=alert\(1\)> sanitize untrusted title/)).toBeVisible();
   await expect(page.locator('.pr-row')).toHaveCount(5);
-  const scrollWidths = await page.evaluate(() => ({ body: document.body.scrollWidth, root: document.documentElement.scrollWidth, popup: document.querySelector('.popup')!.scrollWidth, popupClient: document.querySelector('.popup')!.clientWidth, viewport: window.innerWidth }));
+  const scrollWidths = await page.evaluate(() => {
+    const popup = document.querySelector('.popup');
+    if (!(popup instanceof HTMLElement)) throw new Error('Popup element is missing');
+    return {
+      body: document.body.scrollWidth,
+      root: document.documentElement.scrollWidth,
+      popup: popup.scrollWidth,
+      popupClient: popup.clientWidth,
+      viewport: window.innerWidth,
+    };
+  });
   expect(scrollWidths.body).toBeLessThanOrEqual(scrollWidths.viewport);
   expect(scrollWidths.root).toBeLessThanOrEqual(scrollWidths.viewport);
   expect(scrollWidths.popup).toBeLessThanOrEqual(scrollWidths.popupClient);
   await page.locator('.popup').screenshot({ path: 'screenshots/popup-light-all.png' });
   await page.emulateMedia({ colorScheme: 'dark' });
-  await expect.poll(() => page.locator('.popup').evaluate(el => getComputedStyle(el).backgroundColor)).toBe('rgb(22, 27, 34)');
-  const darkWidths = await page.evaluate(() => ({ body: document.body.scrollWidth, root: document.documentElement.scrollWidth, popup: document.querySelector('.popup')!.scrollWidth, popupClient: document.querySelector('.popup')!.clientWidth, viewport: window.innerWidth }));
+  await expect
+    .poll(() => page.locator('.popup').evaluate((el) => getComputedStyle(el).backgroundColor))
+    .toBe('rgb(22, 27, 34)');
+  const darkWidths = await page.evaluate(() => {
+    const popup = document.querySelector('.popup');
+    if (!(popup instanceof HTMLElement)) throw new Error('Popup element is missing');
+    return {
+      body: document.body.scrollWidth,
+      root: document.documentElement.scrollWidth,
+      popup: popup.scrollWidth,
+      popupClient: popup.clientWidth,
+      viewport: window.innerWidth,
+    };
+  });
   expect(darkWidths.body).toBeLessThanOrEqual(darkWidths.viewport);
   expect(darkWidths.root).toBeLessThanOrEqual(darkWidths.viewport);
   expect(darkWidths.popup).toBeLessThanOrEqual(darkWidths.popupClient);
   await page.locator('.popup').screenshot({ path: 'screenshots/popup-dark-all.png' });
   await page.emulateMedia({ colorScheme: 'light' });
-  await expect.poll(() => page.locator('.popup').evaluate(el => getComputedStyle(el).backgroundColor)).toBe('rgb(255, 255, 255)');
+  await expect
+    .poll(() => page.locator('.popup').evaluate((el) => getComputedStyle(el).backgroundColor))
+    .toBe('rgb(255, 255, 255)');
   await expect(page.getByText('acme-inc/a-very-long-private-repository-name-for-layout')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Recently closed' })).toBeVisible();
   await page.screenshot({ path: 'screenshots/popup.png', fullPage: false });
@@ -28,7 +55,9 @@ test('shows grouped PRs, renders untrusted text safely, and keeps long fields in
   await expect(page.getByRole('navigation', { name: 'Pull request categories' })).toBeVisible();
   await page.locator('.popup').screenshot({ path: 'screenshots/popup-light-tabs.png' });
   await page.emulateMedia({ colorScheme: 'dark' });
-  await expect.poll(() => page.locator('.popup').evaluate(el => getComputedStyle(el).backgroundColor)).toBe('rgb(22, 27, 34)');
+  await expect
+    .poll(() => page.locator('.popup').evaluate((el) => getComputedStyle(el).backgroundColor))
+    .toBe('rgb(22, 27, 34)');
   await page.locator('.popup').screenshot({ path: 'screenshots/popup-dark-tabs.png' });
   await page.emulateMedia({ colorScheme: 'light' });
   await page.getByRole('button', { name: /Review/ }).click();
@@ -45,8 +74,13 @@ test('opens PR by row keyboard activation and bell toggles without opening it', 
   const bell = page.getByRole('button', { name: 'Turn notifications on' }).first();
   await bell.focus();
   await page.keyboard.press('Space');
-  await expect(page.getByRole('button', { name: 'Turn notifications off' }).first()).toHaveAttribute('aria-pressed', 'true');
-  expect(await page.evaluate(() => (window as Window & { __openedPRCount?: number }).__openedPRCount)).toBe(openedBeforeBell);
+  await expect(page.getByRole('button', { name: 'Turn notifications off' }).first()).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  expect(await page.evaluate(() => (window as Window & { __openedPRCount?: number }).__openedPRCount)).toBe(
+    openedBeforeBell,
+  );
 });
 
 test('settings expose account, options, and clear the PAT field before the bridge resolves', async ({ page }) => {
@@ -60,14 +94,23 @@ test('settings expose account, options, and clear the PAT field before the bridg
   await input.fill('ghp_synthetic_example');
   await page.getByRole('button', { name: 'Connect' }).click();
   await expect(input).toHaveValue('');
-  expect(await page.evaluate(() => (window as Window & { __PR_NANNY_PAT_PENDING__?: boolean }).__PR_NANNY_PAT_PENDING__)).toBe(true);
+  expect(
+    await page.evaluate(() => (window as Window & { __PR_NANNY_PAT_PENDING__?: boolean }).__PR_NANNY_PAT_PENDING__),
+  ).toBe(true);
   expect(await page.evaluate(() => localStorage.length + sessionStorage.length)).toBe(0);
   expect(await page.locator('body').innerText()).not.toContain('ghp_synthetic_example');
   await expect(page.getByLabel('Update interval')).toBeVisible();
   await expect(page.getByText('CI status changes')).toBeVisible();
   await expect(page.getByLabel('Launch at login')).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect.poll(() => page.evaluate(() => (window as Window & { __PR_NANNY_HIDDEN__?: boolean }).__PR_NANNY_HIDDEN__)).toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => (window as Window & { __PR_NANNY_HIDDEN__?: boolean }).__PR_NANNY_HIDDEN__))
+    .toBe(true);
+});
+
+test('settings display the version provided by the production build', async ({ page }) => {
+  await page.goto('/?settings=1');
+  await expect(page.getByText(`PR Nanny ${appVersion}`)).toBeVisible();
 });
 
 test('shows a setup action when auth is missing and keeps cached pull requests visible offline', async ({ page }) => {
@@ -76,7 +119,9 @@ test('shows a setup action when auth is missing and keeps cached pull requests v
   await page.getByRole('button', { name: 'Open Settings', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
   await page.goto('/?fixtureConnection=offline');
-  await expect(page.getByText('You are offline. Showing the pull requests saved from your last refresh.')).toBeVisible();
+  await expect(
+    page.getByText('You are offline. Showing the pull requests saved from your last refresh.'),
+  ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Authored by you' })).toBeVisible();
   await page.goto('/?fixtureConnection=rate_limited');
   await expect(page.getByText('GitHub is limiting requests. PR Nanny will try again automatically.')).toBeVisible();
@@ -103,19 +148,36 @@ test('failed settings save stays actionable and prevents a second save while pen
   await notifications.click();
   await expect(notifications).toBeDisabled();
   await expect(page.getByLabel('CI status changes')).toBeDisabled();
-  expect(await page.evaluate(() => (window as Window & { __PR_NANNY_SAVE_PENDING__?: boolean }).__PR_NANNY_SAVE_PENDING__)).toBe(true);
+  expect(
+    await page.evaluate(() => (window as Window & { __PR_NANNY_SAVE_PENDING__?: boolean }).__PR_NANNY_SAVE_PENDING__),
+  ).toBe(true);
   await expect(page.getByRole('status').filter({ hasText: 'Could not save settings. Try again.' })).toBeVisible();
   await expect(notifications).toBeEnabled();
   await expect(notifications).not.toBeChecked();
 });
 
 test('an older poll cannot overwrite a newer saved layout', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
+  await page.clock.pauseAt(new Date('2026-01-01T00:01:00Z'));
   await page.goto('/?fixtureStalePoll=1');
   await expect(page.getByText('Connected as octocat')).toBeVisible();
-  await page.waitForTimeout(1150);
+  await page.clock.runFor(1000);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as Window & { __PR_NANNY_STALE_POLL_PENDING__?: boolean }).__PR_NANNY_STALE_POLL_PENDING__,
+      ),
+    )
+    .toBe(true);
   await page.getByRole('button', { name: 'Tabs' }).click();
   await expect(page.getByRole('button', { name: 'Tabs' })).toHaveAttribute('aria-pressed', 'true');
-  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    const release = (window as Window & { __PR_NANNY_RELEASE_STALE_POLL__?: () => void })
+      .__PR_NANNY_RELEASE_STALE_POLL__;
+    if (!release) throw new Error('The delayed stale poll is not pending.');
+    release();
+  });
+  await page.clock.runFor(20);
   await expect(page.getByRole('button', { name: 'Tabs' })).toHaveAttribute('aria-pressed', 'true');
 });
 
@@ -130,8 +192,15 @@ test('a bell preference stays in sync across duplicate category rows', async ({ 
   await page.goto('/');
   const copies = page.locator('.pr-row').filter({ hasText: 'Unknown checks stay informational' });
   await expect(copies).toHaveCount(2);
-  const openedBefore = await page.evaluate(() => (window as Window & { __openedPRCount?: number }).__openedPRCount ?? 0);
+  const openedBefore = await page.evaluate(
+    () => (window as Window & { __openedPRCount?: number }).__openedPRCount ?? 0,
+  );
   await copies.first().getByRole('button', { name: 'Turn notifications off' }).click();
-  await expect(copies.nth(1).getByRole('button', { name: 'Turn notifications on' })).toHaveAttribute('aria-pressed', 'false');
-  expect(await page.evaluate(() => (window as Window & { __openedPRCount?: number }).__openedPRCount ?? 0)).toBe(openedBefore);
+  await expect(copies.nth(1).getByRole('button', { name: 'Turn notifications on' })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
+  expect(await page.evaluate(() => (window as Window & { __openedPRCount?: number }).__openedPRCount ?? 0)).toBe(
+    openedBefore,
+  );
 });

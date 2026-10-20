@@ -1,16 +1,21 @@
 #!/bin/sh
 set -eu
 
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-VERSION=${1:-0.1.0-rc.1}
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+SOURCE_VERSION=$(sh "$ROOT/scripts/read-version.sh")
+VERSION=${1:-$SOURCE_VERSION}
 TARGET=${2:-$(uname -s | tr '[:upper:]' '[:lower:]')}
-case "$VERSION" in *[!A-Za-z0-9._+-]*|'') echo "invalid version" >&2; exit 2;; esac
+[ "$VERSION" = "$SOURCE_VERSION" ] || { echo "requested version $VERSION does not match VERSION ($SOURCE_VERSION)" >&2; exit 2; }
 mkdir -p "$ROOT/dist" "$ROOT/bin"
 
 build_binary() {
   output=$1
   shift
-  (cd "$ROOT/frontend" && pnpm run build)
+  if [ "${PR_NANNY_PREBUILT_FRONTEND:-0}" = 1 ]; then
+    [ -f "$ROOT/frontend/dist/index.html" ] || { echo "prebuilt frontend is missing frontend/dist/index.html" >&2; exit 1; }
+  else
+    (cd "$ROOT/frontend" && pnpm run build)
+  fi
   if [ "$GOOS" = darwin ]; then
     (cd "$ROOT" && CGO_ENABLED=1 GOOS="$GOOS" GOARCH="$GOARCH" MACOSX_DEPLOYMENT_TARGET=13.0 CGO_CFLAGS="-mmacosx-version-min=13.0" CGO_LDFLAGS="-mmacosx-version-min=13.0" go build -tags production -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$output" .)
   else
@@ -67,7 +72,10 @@ EOF
   linux)
     [ "$(uname -s)" = Linux ] || { echo "Linux packaging requires a Linux host with GTK4 and WebKitGTK 6 development files" >&2; exit 2; }
     [ "$(uname -m)" = x86_64 ] || { echo "Linux x64 packaging requires an x86_64 host" >&2; exit 2; }
-    command -v pkg-config >/dev/null && pkg-config --exists gtk4 webkitgtk-6.0 || { echo "install GTK4 and WebKitGTK 6 development packages" >&2; exit 2; }
+    if ! command -v pkg-config >/dev/null || ! pkg-config --exists gtk4 webkitgtk-6.0; then
+      echo "install GTK4 and WebKitGTK 6 development packages" >&2
+      exit 2
+    fi
     [ -f "$ROOT/assets/icon.png" ] || { echo "missing assets/icon.png" >&2; exit 1; }
     GOOS=linux GOARCH=amd64
     binary="$ROOT/bin/pr-nanny"
@@ -104,7 +112,7 @@ EOF
     cat > "$root/install.sh" <<'EOF'
 #!/bin/sh
 set -eu
-HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 DATA_HOME=${XDG_DATA_HOME:-"$HOME/.local/share"}
 BIN_HOME=${XDG_BIN_HOME:-"$HOME/.local/bin"}
 mkdir -p "$DATA_HOME/applications" "$DATA_HOME/icons/hicolor/256x256/apps" "$BIN_HOME"

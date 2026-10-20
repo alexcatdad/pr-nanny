@@ -29,7 +29,7 @@ type PullRequest struct {
 	// Request node IDs detect removed-and-recreated requests between polling cycles.
 	// They never cross the renderer boundary.
 	ReviewRequestIDs []string `json:"-"`
-	Bell            bool       `json:"bell"`
+	Bell             bool     `json:"bell"`
 }
 type EventPreferences struct {
 	CI              bool `json:"ci"`

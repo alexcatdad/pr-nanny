@@ -9,4 +9,13 @@ export function relativeAge(value: string, now = Date.now()): string {
   if (seconds < 31536000) return `${Math.floor(seconds / 2592000)}mo`;
   return `${Math.floor(seconds / 31536000)}y`;
 }
-export const statusLabel = (pr: { approved: boolean; ci: string }) => ({ approval: pr.approved ? 'Approved' : 'Not approved', ci: ({ passed: 'Passed', not_passed: 'Not passed', running: 'Running', not_available: 'Not available' } as Record<string, string>)[pr.ci] ?? 'Not available' });
+export const statusLabel = (pr: { approved: boolean; ci: string }) => ({
+  approval: pr.approved ? 'Approved' : 'Not approved',
+  ci:
+    (
+      { passed: 'Passed', not_passed: 'Not passed', running: 'Running', not_available: 'Not available' } as Record<
+        string,
+        string
+      >
+    )[pr.ci] ?? 'Not available',
+});

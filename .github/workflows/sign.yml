@@ -25,6 +25,8 @@ jobs:
       windows_configured: ${{ steps.credentials.outputs.windows_configured }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Verify successful main Validate run
         id: gate
         env:
@@ -99,6 +101,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          VERSION=$(sh scripts/read-version.sh)
           SOURCE="$RUNNER_TEMP/pr-nanny-source"
           WORK="$RUNNER_TEMP/pr-nanny-signing"
           OUTPUT="$RUNNER_TEMP/pr-nanny-signed"
@@ -117,7 +120,7 @@ jobs:
           trap cleanup EXIT
 
           sh scripts/verify-package.sh "$SOURCE"
-          ARCHIVE="$SOURCE/pr-nanny-0.1.0-rc.1-darwin-arm64.zip"
+          ARCHIVE="$SOURCE/pr-nanny-$VERSION-darwin-arm64.zip"
           unzip -q "$ARCHIVE" -d "$WORK"
           APP="$WORK/PR Nanny.app"
           test -x "$APP/Contents/MacOS/pr-nanny"
@@ -139,7 +142,7 @@ jobs:
           xcrun stapler validate "$APP"
           spctl --assess --type execute --verbose=2 "$APP"
 
-          FINAL="$OUTPUT/pr-nanny-0.1.0-rc.1-darwin-arm64.zip"
+          FINAL="$OUTPUT/pr-nanny-$VERSION-darwin-arm64.zip"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$FINAL"
           (cd "$OUTPUT" && shasum -a 256 "$(basename "$FINAL")" > "$(basename "$FINAL").sha256")
           (cd "$OUTPUT" && shasum -a 256 -c "$(basename "$FINAL").sha256")
@@ -178,11 +181,12 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $Version = (Get-Content -Raw VERSION).Trim()
           $Source = Join-Path $env:RUNNER_TEMP 'pr-nanny-source'
           $Output = Join-Path $env:RUNNER_TEMP 'pr-nanny-signed'
           $Work = Join-Path $env:RUNNER_TEMP 'pr-nanny-signing'
           $Certificate = Join-Path $env:RUNNER_TEMP 'pr-nanny-signing.pfx'
-          $Archive = Join-Path $Source 'pr-nanny-0.1.0-rc.1-windows-x64.zip'
+          $Archive = Join-Path $Source "pr-nanny-$Version-windows-x64.zip"
           $Checksum = "$Archive.sha256"
           New-Item -ItemType Directory -Force -Path $Output, $Work | Out-Null
           try {
@@ -215,7 +219,7 @@ jobs:
             & $SignTool verify /pa /all /v $Executable
             if ($LASTEXITCODE -ne 0) { throw 'SignTool could not verify the Authenticode signature.' }
 
-            $Final = Join-Path $Output 'pr-nanny-0.1.0-rc.1-windows-x64.zip'
+            $Final = Join-Path $Output "pr-nanny-$Version-windows-x64.zip"
             Compress-Archive -Path (Join-Path $Work '*') -DestinationPath $Final -CompressionLevel Optimal
             $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Final).Hash.ToLowerInvariant()
             Set-Content -Encoding ascii -NoNewline -LiteralPath "$Final.sha256" -Value "$Hash  $(Split-Path -Leaf $Final)`n"

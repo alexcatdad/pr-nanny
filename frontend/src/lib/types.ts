@@ -15,7 +15,13 @@ export type PullRequest = {
   reviewRequested: boolean;
   bell: boolean;
 };
-export type EventPreferences = { ci: boolean; approval: boolean; reviewRequested: boolean; merged: boolean; closed: boolean };
+export type EventPreferences = {
+  ci: boolean;
+  approval: boolean;
+  reviewRequested: boolean;
+  merged: boolean;
+  closed: boolean;
+};
 export type Settings = {
   version: number;
   authMethod: string;

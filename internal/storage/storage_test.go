@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -161,6 +162,50 @@ func TestQuarantinePreservesCorruptFile(t *testing.T) {
 	}
 	if len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), "state.json.corrupt.") {
 		t.Fatalf("quarantine entries=%v", entries)
+	}
+}
+
+func TestAtomicWriteFailurePreservesDestinationAndCleansTemporaryFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "state.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s := New(dir)
+	if err := s.SaveState(State{Bells: map[string]bool{}, Baseline: map[string]Observed{}}); err == nil {
+		t.Fatal("replace of an existing directory unexpectedly succeeded")
+	}
+	info, err := os.Stat(filepath.Join(dir, "state.json"))
+	if err != nil || !info.IsDir() {
+		t.Fatalf("failed write replaced destination: info=%v err=%v", info, err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "state.json" {
+		t.Fatalf("temporary write file was left behind: %v", entries)
+	}
+}
+
+func TestSettingsNormalizesOmittedVersionedDefaults(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"Version":0,"AuthMethod":"","IntervalSeconds":0,"Layout":""}`
+	contents, err := json.Marshal(envelope{Version: schemaVersion, Payload: json.RawMessage(payload)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := New(dir).Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != 1 || got.AuthMethod != "gh" || got.IntervalSeconds != 60 || got.Layout != "all" {
+		t.Fatalf("normalized settings = %+v", got)
 	}
 }
 

@@ -1,9 +1,16 @@
 param(
-  [string]$Version = '0.1.0-rc.1'
+  [string]$Version = ''
 )
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-if ($Version -notmatch '^[A-Za-z0-9._+-]+$') { throw 'Invalid version.' }
+$SourceVersion = (Get-Content -Raw -Path (Join-Path $Root 'VERSION')).Trim()
+$Numeric = '(0|[1-9][0-9]*)'
+$PrereleaseId = '(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)'
+$BuildId = '[0-9A-Za-z-]+'
+$SemVer = "^$Numeric\.$Numeric\.$Numeric(-$PrereleaseId(\.$PrereleaseId)*)?(\+$BuildId(\.$BuildId)*)?$"
+if ($SourceVersion -notmatch $SemVer) { throw 'VERSION must contain one valid SemVer value.' }
+if (-not $Version) { $Version = $SourceVersion }
+if ($Version -cne $SourceVersion) { throw "Requested version does not match VERSION ($SourceVersion)." }
 if ($env:OS -ne 'Windows_NT' -or $env:PROCESSOR_ARCHITECTURE -notin @('AMD64','ARM64')) { throw 'Run Windows packaging on a Windows host.' }
 if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Windows x64 packaging requires an x64 host.' }
 $WebView = @(
@@ -15,18 +22,27 @@ if (-not $WebView) {
 }
 
 $Frontend = Join-Path $Root 'frontend'
-Push-Location $Frontend
-try { & pnpm run build; if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' } }
-finally { Pop-Location }
+if ($env:PR_NANNY_PREBUILT_FRONTEND -eq '1') {
+  if (-not (Test-Path (Join-Path $Frontend 'dist/index.html'))) { throw 'Prebuilt frontend is missing frontend/dist/index.html.' }
+} else {
+  Push-Location $Frontend
+  try { & pnpm run build; if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' } }
+  finally { Pop-Location }
+}
 
 $BinDir = Join-Path $Root 'bin'
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 $Binary = Join-Path $BinDir 'pr-nanny.exe'
-$env:CGO_ENABLED = '1'
-$env:GOOS = 'windows'
-$env:GOARCH = 'amd64'
 Push-Location $Root
-try { & go build -tags production -trimpath -ldflags "-H windowsgui -s -w -X main.version=$Version" -o $Binary .; if ($LASTEXITCODE -ne 0) { throw 'Windows production build failed.' } }
+try {
+  & go -C tools/windowsresources run . -root ../..
+  if ($LASTEXITCODE -ne 0) { throw 'Windows resource generation failed.' }
+  $env:CGO_ENABLED = '1'
+  $env:GOOS = 'windows'
+  $env:GOARCH = 'amd64'
+  & go build -tags production -trimpath -ldflags "-H windowsgui -s -w -X main.version=$Version" -o $Binary .
+  if ($LASTEXITCODE -ne 0) { throw 'Windows production build failed.' }
+}
 finally { Pop-Location }
 
 $Dist = Join-Path $Root 'dist'
@@ -58,19 +74,19 @@ $Shortcut = $Shell.CreateShortcut((Join-Path $Folder 'PR Nanny.lnk'))
 $Shortcut.TargetPath = Join-Path $Here 'pr-nanny.exe'
 $Shortcut.WorkingDirectory = $Here
 $Shortcut.Save()
-Write-Host 'Installed the current-user Start Menu shortcut.'
+Write-Output 'Installed the current-user Start Menu shortcut.'
 '@ | Set-Content -Encoding utf8 (Join-Path $Payload 'install.ps1')
   @'
 $ErrorActionPreference = 'Stop'
 $Folder = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\PR Nanny'
 Remove-Item -LiteralPath $Folder -Recurse -Force -ErrorAction SilentlyContinue
-Write-Host 'Removed the current-user Start Menu shortcut. Settings and credentials were kept.'
+Write-Output 'Removed the current-user Start Menu shortcut. Settings and credentials were kept.'
 '@ | Set-Content -Encoding utf8 (Join-Path $Payload 'uninstall.ps1')
   $Archive = Join-Path $Dist "pr-nanny-$Version-windows-x64.zip"
   if (Test-Path $Archive) { Remove-Item -LiteralPath $Archive -Force }
   Compress-Archive -Path (Join-Path $Payload '*') -DestinationPath $Archive
   $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Archive).Hash.ToLowerInvariant()
   Set-Content -Encoding ascii -NoNewline -Path "$Archive.sha256" -Value "$Hash  $(Split-Path -Leaf $Archive)`n"
-  Write-Host "Created $Archive"
+  Write-Output "Created $Archive"
 }
 finally { Remove-Item -LiteralPath $Stage -Recurse -Force -ErrorAction SilentlyContinue }

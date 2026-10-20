@@ -6,4 +6,6 @@ if (import.meta.env.VITE_TEST_FIXTURES === 'true') {
   const { installMockBridge } = await import('./lib/mockBridge');
   installMockBridge();
 }
-mount(App, { target: document.getElementById('app')! });
+const target = document.getElementById('app');
+if (!target) throw new Error('App mount target is missing');
+mount(App, { target });

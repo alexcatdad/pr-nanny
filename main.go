@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -33,9 +35,33 @@ var trayIcon []byte
 
 //go:embed assets/icon.png
 var appIcon []byte
-var version = "0.1.0-dev"
+
+//go:embed VERSION
+var sourceVersion string
+
+// Packaging sets version via ldflags; ordinary source builds use VERSION too.
+var version string
+
+func buildVersion() string {
+	if version != "" {
+		return version
+	}
+	return strings.TrimSpace(sourceVersion)
+}
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		commit := "unknown"
+		if info, ok := debug.ReadBuildInfo(); ok {
+			for _, setting := range info.Settings {
+				if setting.Key == "vcs.revision" {
+					commit = setting.Value
+				}
+			}
+		}
+		fmt.Printf("PR Nanny %s (%s)\n", buildVersion(), commit)
+		return
+	}
 	desktopSmoke := len(os.Args) == 2 && os.Args[1] == "--desktop-smoke-test"
 	if desktopSmoke && (os.Getenv("GITHUB_ACTIONS") != "true" || runtime.GOOS == "darwin") {
 		// This probe changes only a disposable runner's synthetic desktop identity.

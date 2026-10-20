@@ -144,7 +144,6 @@ func (c *Controller) ConnectPAT(token string) (model.Snapshot, error) {
 	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
 	defer cancel()
 	account, err := c.auth.ConnectPAT(ctx, token)
-	token = ""
 	if err != nil {
 		return model.Snapshot{}, safeAuthError(err)
 	}

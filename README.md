@@ -1,8 +1,10 @@
 # PR Nanny
 
+[![CI](https://github.com/alexcatdad/pr-nanny/actions/workflows/ci.yml/badge.svg)](https://github.com/alexcatdad/pr-nanny/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/alexcatdad/pr-nanny?include_prereleases)](https://github.com/alexcatdad/pr-nanny/releases) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 PR Nanny is a passive GitHub.com pull-request monitor that lives in the system tray. It reads open pull requests authored by you or requesting your individual or team review, shows their approval and CI summaries, and can send local notifications. It never writes to GitHub or changes subscriptions.
 
-> **0.1.0-rc.1 is a release candidate.** The release workflow publishes only after all native, frontend and security gates pass on the exact source commit. See [Releases](https://github.com/alexcatdad/pr-nanny/releases) for available downloads and [Actions](https://github.com/alexcatdad/pr-nanny/actions/workflows/ci.yml) for qualification results. Artifacts are unsigned except for ad-hoc macOS bundle signing; Developer ID signing and notarization are not configured.
+> **PR Nanny is prerelease software.** The release workflow publishes only after all native, frontend and security gates pass on the exact source commit. See [Releases](https://github.com/alexcatdad/pr-nanny/releases) for available downloads and [Actions](https://github.com/alexcatdad/pr-nanny/actions/workflows/ci.yml) for qualification results. Artifacts are unsigned except for ad-hoc macOS bundle signing; Developer ID signing and notarization are not configured.
 
 ## Screenshots
 
@@ -30,11 +32,11 @@ CI summaries combine check runs and commit statuses. A failure takes precedence 
 
 ## Download and install
 
-Archives for `0.1.0-rc.1` are named:
+Qualified release archives use the version from [`VERSION`](VERSION):
 
-- `pr-nanny-0.1.0-rc.1-darwin-arm64.zip` — macOS 13 or newer, Apple Silicon.
-- `pr-nanny-0.1.0-rc.1-windows-x64.zip` — Windows 10/11 x64 with Microsoft Edge WebView2 Runtime.
-- `pr-nanny-0.1.0-rc.1-linux-x64.tar.gz` — Linux x64 with glibc 2.39 or newer, GTK4, WebKitGTK 6, and a Secret Service-compatible credential store such as GNOME Keyring or KWallet with Secret Service enabled. Ubuntu 24.04 and current Fedora releases are the target environments.
+- `pr-nanny-VERSION-darwin-arm64.zip` — macOS 13 or newer, Apple Silicon.
+- `pr-nanny-VERSION-windows-x64.zip` — Windows 10/11 x64 with Microsoft Edge WebView2 Runtime.
+- `pr-nanny-VERSION-linux-x64.tar.gz` — Linux x64 with glibc 2.39 or newer, GTK4, WebKitGTK 6, and a Secret Service-compatible credential store such as GNOME Keyring or KWallet with Secret Service enabled. Ubuntu 24.04 and current Fedora releases are the target environments.
 
 Download qualified archives from [Releases](https://github.com/alexcatdad/pr-nanny/releases). Before a release qualifies, each successful native CI job provides a `package-*` workflow artifact for testing. Verify the adjacent `.sha256` file or release `SHA256SUMS` before installing. A successful individual platform job does not establish qualification of the other platforms.
 
@@ -44,7 +46,7 @@ On Windows, unzip and run `install.ps1` to add a current-user Start Menu shortcu
 
 On Linux, extract the archive, run `./install.sh` from its extracted directory, and ensure `~/.local/bin` is on `PATH`. The installer adds the app and desktop entry for the current user. Run `./uninstall.sh` in the same directory to remove those application files.
 
-Install scripts do not remove settings or credentials. Homebrew supports macOS and Linux (including WSL); it does not install a native Windows build. Qualified releases include cask and formula files for a local tap; no public tap is published. See [Homebrew installation notes](build/README.md).
+Install scripts preserve settings and credentials. The existing [`alexcatdad/tap`](https://github.com/alexcatdad/homebrew-tap) is the Homebrew distribution target; see [Homebrew installation notes and integration status](build/README.md) before installing. Homebrew on Windows runs Linux packages inside WSL; the native Windows archive remains a separate installation. [Generated release notes](https://github.com/alexcatdad/pr-nanny/releases) are the changelog.
 
 ## Authentication and permissions
 
@@ -59,3 +61,7 @@ Use Go 1.27.2, Node.js 24.19.0, pnpm 11.25.0, and the pinned Wails `v3.0.0-beta.
 Settings and notification deduplication state are stored as versioned JSON under the OS user config directory; current PR data remains in memory. See [SPEC.md](SPEC.md), [ARCHITECTURE.md](ARCHITECTURE.md), and [SECURITY.md](SECURITY.md) for behavior, data flow, and known limitations.
 
 Ubuntu 24.04+ may need a per-application AppArmor allowance so WebKit can create its sandbox. See [the exact-path profile instructions](build/linux/APPARMOR.md); keep WebKit sandboxing and the system-wide policy enabled.
+
+## Development and verification
+
+Run `sh scripts/lint.sh` for local formatting, lint and type checks; see [CONTRIBUTING.md](CONTRIBUTING.md) for tests and platform prerequisites. CI retains readable Go and frontend coverage artifacts. Release publication requires every qualification job on the exact source commit, matching package checksums, and verified build provenance. Review [the implementation checkpoint](docs/IMPLEMENTATION-STATUS.md) for the distinction between completed and pending qualification.

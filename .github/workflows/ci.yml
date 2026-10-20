@@ -16,27 +16,50 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.19.0'
-      - run: npm install --global pnpm@11.25.0
+      # Pinned package-manager bootstrap; application dependencies use frozen locks.
+      - run: npm install --global pnpm@11.25.0 # zizmor: ignore[adhoc-packages]
+      - name: Locate pnpm store
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
       - run: pnpm install --frozen-lockfile
         working-directory: frontend
-      - run: pnpm check && pnpm test && pnpm audit --audit-level=low && pnpm build
+      - run: pnpm lint && pnpm check && pnpm test:coverage && pnpm audit --audit-level=low
         working-directory: frontend
       - run: pnpm exec playwright install --with-deps chromium
         working-directory: frontend
       - run: pnpm test:e2e
         working-directory: frontend
+      - name: Publish frontend coverage summary
+        if: always()
+        run: |
+          if [ -f frontend/coverage/coverage-summary.json ]; then
+            jq -r '.total | "### Frontend coverage\n\n| Metric | Coverage |\n| --- | --- |\n| Lines | \(.lines.pct)% |\n| Branches | \(.branches.pct)% |\n| Functions | \(.functions.pct)% |\n| Statements | \(.statements.pct)% |"' frontend/coverage/coverage-summary.json >> "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: frontend-test-evidence
           path: |
+            frontend/coverage/
             frontend/playwright-report/
             frontend/screenshots/
           retention-days: 14
   native:
+    needs: assets
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     name: Native (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -52,18 +75,31 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+          cache-dependency-path: |
+            go.sum
+            tools/security/go.sum
+            tools/windowsresources/go.sum
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          node-version: '24.19.0'
-      - run: npm install --global pnpm@11.25.0
+          name: production-frontend
+          path: frontend/dist
+      - name: Read canonical version
+        shell: bash
+        run: echo "APP_VERSION=$(sh scripts/read-version.sh)" >> "$GITHUB_ENV"
       - name: Install Linux GUI and test-vault dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev libsecret-1-dev libxdo-dev xvfb dbus-x11 gnome-keyring apparmor dunst
-      - run: pnpm install --frozen-lockfile && pnpm build
-        working-directory: frontend
+      - name: Test Windows resource generation
+        if: runner.os == 'Windows'
+        run: go -C tools/windowsresources test ./...
+      - name: Generate versioned Windows resources
+        if: runner.os == 'Windows'
+        run: go -C tools/windowsresources run . -root ../..
       - name: Native adapter race tests
         run: go test -race -tags production .
       - name: Go unit, integration and race tests
@@ -93,12 +129,16 @@ jobs:
         run: |
           dbus-run-session -- sh -c 'printf "%s" fixture-password | gnome-keyring-daemon --unlock --components=secrets >/dev/null; PR_NANNY_TEST_NATIVE_VAULT=1 go test ./internal/auth -run "^TestNativeStore" -count=1 -v'
       - name: Package macOS or Linux production app
+        env:
+          PR_NANNY_PREBUILT_FRONTEND: '1'
         if: runner.os != 'Windows'
-        run: sh scripts/package.sh 0.1.0-rc.1 ${{ matrix.package }}
+        run: sh scripts/package.sh "$APP_VERSION" "${{ matrix.package }}"
       - name: Package Windows production app
+        env:
+          PR_NANNY_PREBUILT_FRONTEND: '1'
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./scripts/package-windows.ps1 -Version 0.1.0-rc.1
+        run: ./scripts/package-windows.ps1 -Version $env:APP_VERSION
       - name: Production capabilities check
         shell: bash
         run: |
@@ -138,9 +178,11 @@ jobs:
           if [ "$RUNNER_OS" = Linux ]; then
             xvfb-run -a dbus-run-session -- sh scripts/desktop-smoke-linux.sh ./bin/pr-nanny
           elif [ "$RUNNER_OS" = Windows ]; then
+            # PowerShell expands these variables after Bash passes the script literally.
+            # shellcheck disable=SC2016
             powershell -NoProfile -Command '$stdout = Join-Path $env:RUNNER_TEMP "pr-nanny-smoke.stdout"; $stderr = Join-Path $env:RUNNER_TEMP "pr-nanny-smoke.stderr"; $p = Start-Process ./bin/pr-nanny.exe -ArgumentList "--desktop-smoke-test" -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -Wait; Get-Content $stdout; Get-Content $stderr; exit $p.ExitCode'
           else
-            unzip -q dist/pr-nanny-0.1.0-rc.1-darwin-arm64.zip -d "$RUNNER_TEMP/pr-nanny-smoke"
+            unzip -q "dist/pr-nanny-$APP_VERSION-darwin-arm64.zip" -d "$RUNNER_TEMP/pr-nanny-smoke"
             "$RUNNER_TEMP/pr-nanny-smoke/PR Nanny.app/Contents/MacOS/pr-nanny" --smoke-test
           fi
       - name: Verify macOS or Linux release artifact
@@ -149,7 +191,27 @@ jobs:
       - name: Verify Windows release artifact
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./scripts/verify-package-windows.ps1 -Archive dist/pr-nanny-0.1.0-rc.1-windows-x64.zip
+        run: ./scripts/verify-package-windows.ps1 -Archive "dist/pr-nanny-$env:APP_VERSION-windows-x64.zip"
+      - name: Test isolated Linux installation and removal
+        if: runner.os == 'Linux'
+        run: sh scripts/test-install-linux.sh "dist/pr-nanny-$APP_VERSION-linux-x64.tar.gz"
+      - name: Test Windows package installation and removal
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/test-install-windows.ps1 -Archive "dist/pr-nanny-$env:APP_VERSION-windows-x64.zip"
+      - name: Analyze PowerShell scripts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Scope CurrentUser -Force
+          Invoke-ScriptAnalyzer -Path ./scripts -Recurse -Severity Warning,Error -EnableExit
+      - name: Attest packages built from trusted main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.zip
+            dist/*.tar.gz
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: package-${{ runner.os }}-${{ runner.arch }}
@@ -162,15 +224,26 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/security/go.sum
+      - name: Scan full source history and workflows
+        run: |
+          sh scripts/install-ci-tools.sh
+          .tools/gitleaks git --redact --no-banner --log-opts='--all'
+          .tools/zizmor --offline --no-progress --min-severity low .github/workflows
       - name: Verify modules
         run: go mod verify
       - name: Verify release qualification rejects incomplete or untrusted runs
         run: sh scripts/test-qualification.sh
       - name: Validate workflow definitions
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11 -shellcheck= -pyflakes=
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes=
       - name: Vet platform-independent backend
         run: go vet ./internal/...
       - name: Vulnerable dependency and code paths
@@ -179,3 +252,125 @@ jobs:
         run: |
           go -C tools/security build -o ../../gosec github.com/securego/gosec/v2/cmd/gosec
           ./gosec ./internal/...
+  assets:
+    name: Production frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.19.0'
+      # Frozen application lock; exact package-manager bootstrap version.
+      - run: npm install --global pnpm@11.25.0 # zizmor: ignore[adhoc-packages]
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+      - run: pnpm install --frozen-lockfile && pnpm build
+        working-directory: frontend
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: production-frontend
+          path: frontend/dist/
+          if-no-files-found: error
+          retention-days: 7
+  backend:
+    name: Backend coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Race-enabled core coverage
+        run: sh scripts/coverage-go.sh
+      - name: Publish readable coverage summary
+        if: always()
+        run: |
+          if [ -f coverage/go-summary.txt ]; then
+            { echo '### Go core coverage'; echo '```text'; cat coverage/go-summary.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: go-coverage
+          path: coverage/
+          retention-days: 14
+  lint:
+    name: Lint and formatting
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            tools/lint/go.sum
+      - name: Go and shell formatting and analysis
+        run: |
+          sh scripts/install-ci-tools.sh
+          export PATH="$PWD/.tools:$PATH"
+          sh scripts/lint.sh --backend
+  codeql:
+    needs: assets
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [go, javascript-typescript]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: matrix.language == 'go'
+        with:
+          go-version-file: go.mod
+      - name: Install native Go extraction dependencies
+        if: matrix.language == 'go'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev libsecret-1-dev libxdo-dev
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: matrix.language == 'go'
+        with:
+          name: production-frontend
+          path: frontend/dist
+      - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.language == 'go' && 'manual' || 'none' }}
+          config-file: .github/codeql.yml
+      - name: Build the production Go application for extraction
+        if: matrix.language == 'go'
+        run: go build -tags production ./...
+      - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
+        with:
+          category: /language:${{ matrix.language }}
+  qualification:
+    name: Qualification
+    if: always()
+    needs: [assets, frontend, backend, lint, security, codeql, native]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require every validation job
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: printf '%s' "$RESULTS" | jq -e 'all(.[]; .result == "success")'

@@ -1,0 +1,9 @@
+name: PR Nanny application
+queries:
+  - uses: security-extended
+paths-ignore:
+  - '**/*_test.go'
+  - '**/*.test.ts'
+  - frontend/src/lib/mockBridge.ts
+  - frontend/src/test
+  - tools

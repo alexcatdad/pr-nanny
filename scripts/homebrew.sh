@@ -14,7 +14,9 @@ case "$mode" in
   formula) [ "$#" -eq 3 ] || usage; VERSION=$1 LINUX_URL=$2 LINUX_SHA=$3 ;;
   both) [ "$#" -eq 5 ] || usage; VERSION=$1 MAC_URL=$2 MAC_SHA=$3 LINUX_URL=$4 LINUX_SHA=$5 ;;
 esac
-case "$VERSION" in *[!A-Za-z0-9._+-]*|'') echo "invalid version" >&2; exit 2;; esac
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+SOURCE_VERSION=$(sh "$ROOT/scripts/read-version.sh")
+[ "$VERSION" = "$SOURCE_VERSION" ] || { echo "requested version $VERSION does not match VERSION ($SOURCE_VERSION)" >&2; exit 2; }
 validate_archive() {
   url=$1 sha=$2
   case "$url" in https://*) ;; *) echo "archive URLs must use https" >&2; exit 2;; esac
@@ -32,8 +34,8 @@ class PrNanny < Formula
   desc "Passive GitHub pull-request monitor"
   homepage "https://github.com/alexcatdad/pr-nanny"
   url "$LINUX_URL"
-  sha256 "$LINUX_SHA"
   version "$VERSION"
+  sha256 "$LINUX_SHA"
   license "MIT"
 
   depends_on :linux
@@ -47,7 +49,10 @@ class PrNanny < Formula
   end
 
   def caveats
-    "Requires the distribution's GTK4 and WebKitGTK 6.0 runtime libraries and glibc 2.39 or newer. Linux packages are built on Ubuntu 24.04. Native Windows is not supported by Homebrew."
+    <<~EOS
+      Requires the distribution's GTK4 and WebKitGTK 6.0 runtime libraries and glibc 2.39 or newer.
+      Linux packages are built on Ubuntu 24.04. Native Windows is not supported by Homebrew.
+    EOS
   end
 
   test do
