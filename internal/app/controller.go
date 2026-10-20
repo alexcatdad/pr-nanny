@@ -140,6 +140,7 @@ func (c *Controller) commitSettings(next model.Settings) error {
 func (c *Controller) ConnectPAT(token string) (model.Snapshot, error) {
 	c.operations.Lock()
 	defer c.operations.Unlock()
+	previous := c.current()
 	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
 	defer cancel()
 	account, err := c.auth.ConnectPAT(ctx, token)
@@ -147,7 +148,12 @@ func (c *Controller) ConnectPAT(token string) (model.Snapshot, error) {
 	if err != nil {
 		return model.Snapshot{}, safeAuthError(err)
 	}
-	return c.connect("pat", account)
+	snapshot, err := c.connect("pat", account)
+	if err != nil && (previous.AuthMethod != "pat" || previous.Account != account) {
+		// A newly staged credential must not survive a failed account selection.
+		_ = c.auth.ForgetPAT(account)
+	}
+	return snapshot, err
 }
 func (c *Controller) ConnectCLI() (model.Snapshot, error) {
 	c.operations.Lock()
@@ -169,7 +175,9 @@ func (c *Controller) connect(method, account string) (model.Snapshot, error) {
 		return model.Snapshot{}, err
 	}
 	if old.AuthMethod == "pat" && (method != "pat" || old.Account != account) {
-		_ = c.auth.ForgetPAT(old.Account)
+		if c.auth.ForgetPAT(old.Account) != nil {
+			c.SetWarning("The previous token could not be removed from the native credential store. Remove the old PR Nanny entry there.")
+		}
 	}
 	// A replacement token for the same account also needs an immediate fetch.
 	go func() { _ = c.monitor.Refresh(c.ctx) }()

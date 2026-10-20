@@ -1,4 +1,4 @@
-//go:build !mcp
+//go:build !mcp || production
 
 package websecurity
 

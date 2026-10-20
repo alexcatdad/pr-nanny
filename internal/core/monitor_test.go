@@ -187,6 +187,54 @@ func TestGlobalNotificationsAndInaccessibleRetention(t *testing.T) {
 	}
 }
 
+func TestInaccessibleCachedCIIsMarkedUnavailableAndRecoveryUsesRealBaseline(t *testing.T) {
+	pr := model.PullRequest{ID: "inaccessible-ci", Authored: true, CI: model.CIPassed}
+	changed := pr
+	changed.CI = model.CINotPassed
+	f := &sequenceFetcher{results: []model.FetchResult{
+		{PullRequests: []model.PullRequest{pr}},
+		{InaccessibleIDs: []string{pr.ID}},
+		{PullRequests: []model.PullRequest{changed}},
+	}}
+	s, n := &memoryStore{}, &recorded{}
+	m, err := New(f, func(context.Context) (string, string, error) { return "", "account", nil }, s, n, model.DefaultSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetBell(pr.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := m.Snapshot()
+	if got.Connection != "connected" || got.Message != "Some pull requests are inaccessible; cached details may be out of date." {
+		t.Fatalf("inaccessible status = %q / %q", got.Connection, got.Message)
+	}
+	if len(got.PullRequests) != 1 || got.PullRequests[0].CI != model.CINotAvailable {
+		t.Fatalf("inaccessible cached row = %#v", got.PullRequests)
+	}
+	if baseline := s.state.Baseline[pr.ID]; baseline.CI != model.CIPassed {
+		t.Fatalf("inaccessible fetch advanced CI baseline: %#v", baseline)
+	}
+	if events := n.list(); len(events) != 0 {
+		t.Fatalf("inaccessible-only poll emitted notifications: %v", events)
+	}
+	if err := m.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got = m.Snapshot()
+	if got.Message != "" || got.Connection != "connected" || len(got.PullRequests) != 1 || got.PullRequests[0].CI != model.CINotPassed {
+		t.Fatalf("recovered status/row = %#v", got)
+	}
+	if events := n.list(); !equalEvents(events, []Event{EventCI}) {
+		t.Fatalf("recovery did not compare to last accessible CI: %v", events)
+	}
+}
+
 func TestRestartDoesNotDuplicateUnchangedEvent(t *testing.T) {
 	base := model.PullRequest{ID: "persisted", CI: model.CIPassed, Authored: true}
 	changed := base
@@ -423,6 +471,175 @@ func TestAccountChangeDuringFetchDiscardsStaleSnapshot(t *testing.T) {
 	}
 }
 
+type generationRaceFetcher struct {
+	calls         int
+	secondStarted chan struct{}
+	releaseSecond chan struct{}
+	thirdStarted  chan struct{}
+	releaseThird  chan struct{}
+}
+
+func (f *generationRaceFetcher) Fetch(ctx context.Context, _, account string, _ []string) (model.FetchResult, error) {
+	f.calls++ // Refresh serializes calls.
+	switch f.calls {
+	case 1:
+		return model.FetchResult{PullRequests: []model.PullRequest{{ID: "old-pr", Authored: true, CI: model.CIPassed}}}, nil
+	case 2:
+		close(f.secondStarted)
+		select {
+		case <-f.releaseSecond:
+			return model.FetchResult{}, errors.New("stale fetch error")
+		case <-ctx.Done():
+			return model.FetchResult{}, ctx.Err()
+		}
+	case 3:
+		close(f.thirdStarted)
+		select {
+		case <-f.releaseThird:
+			return model.FetchResult{PullRequests: []model.PullRequest{{ID: "new-pr-" + account, Authored: true, CI: model.CIPassed}}}, nil
+		case <-ctx.Done():
+			return model.FetchResult{}, ctx.Err()
+		}
+	default:
+		return model.FetchResult{}, nil
+	}
+}
+
+func TestStaleManualRefreshWakesRunForNewGeneration(t *testing.T) {
+	f := &generationRaceFetcher{
+		secondStarted: make(chan struct{}), releaseSecond: make(chan struct{}),
+		thirdStarted: make(chan struct{}), releaseThird: make(chan struct{}),
+	}
+	var accountMu sync.Mutex
+	account := "acct-one"
+	creds := func(context.Context) (string, string, error) {
+		accountMu.Lock()
+		defer accountMu.Unlock()
+		return "synthetic-token", account, nil
+	}
+	m, err := New(f, creds, &memoryStore{}, nil, model.DefaultSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempts := make(chan error, 8)
+	m.pollAttemptHook = func(err error) { attempts <- err }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runDone := make(chan struct{})
+	go func() { m.Run(ctx); close(runDone) }()
+	select {
+	case err := <-attempts:
+		if err != nil {
+			t.Fatalf("initial scheduler poll failed: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("initial scheduler poll did not complete")
+	}
+
+	manualDone := make(chan error, 1)
+	go func() { manualDone <- m.Refresh(context.Background()) }()
+	select {
+	case <-f.secondStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("manual refresh did not enter its fetch")
+	}
+	accountMu.Lock()
+	account = "acct-two"
+	accountMu.Unlock()
+	settings := m.Snapshot().Settings
+	settings.Account, settings.AuthMethod = "acct-two", "pat"
+	if err := m.SetSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-attempts:
+		if !errors.Is(err, ErrRefreshInProgress) {
+			t.Fatalf("scheduler collision error=%v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("scheduler did not attempt the new generation while manual fetch was active")
+	}
+	close(f.releaseSecond)
+	select {
+	case err := <-manualDone:
+		if err == nil {
+			t.Fatal("stale manual fetch unexpectedly committed")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("stale manual fetch did not finish")
+	}
+	select {
+	case <-f.thirdStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("stale fetch completion did not wake the scheduler for new auth")
+	}
+	if got := m.Snapshot(); got.Connection != "connected" || got.Message != "" {
+		t.Fatalf("stale fetch error overwrote current status: %q / %q", got.Connection, got.Message)
+	}
+	close(f.releaseThird)
+	select {
+	case err := <-attempts:
+		if err != nil {
+			t.Fatalf("new-generation scheduler poll failed: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("new-generation scheduler poll did not complete")
+	}
+	if got := m.Snapshot().PullRequests; len(got) != 1 || got[0].ID != "new-pr-acct-two" {
+		t.Fatalf("new-auth result was not committed: %#v", got)
+	}
+	cancel()
+	select {
+	case <-runDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("scheduler did not stop")
+	}
+}
+
+func TestGenerationChangeDuringCredentialsSkipsOldAccountReset(t *testing.T) {
+	credsStarted, releaseCreds := make(chan struct{}), make(chan struct{})
+	fetchCalls := make(chan struct{}, 1)
+	fetcher := signalFetcher{calls: fetchCalls}
+	state := storage.State{Account: "acct-one", Initialized: true, Bells: map[string]bool{"kept": true}, Baseline: map[string]storage.Observed{"kept": {CI: model.CIPassed}}}
+	m, err := New(fetcher, func(context.Context) (string, string, error) {
+		close(credsStarted)
+		<-releaseCreds
+		return "synthetic-token", "acct-one", nil
+	}, &memoryStore{state: state}, nil, model.Settings{Account: "acct-one", AuthMethod: "gh", IntervalSeconds: 60, Layout: "all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- m.Refresh(context.Background()) }()
+	select {
+	case <-credsStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("credential lookup did not start")
+	}
+	next := m.Snapshot().Settings
+	next.Account, next.AuthMethod = "acct-two", "pat"
+	if err := m.SetSettings(next); err != nil {
+		t.Fatal(err)
+	}
+	close(releaseCreds)
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("old credential result unexpectedly continued")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("refresh did not stop after generation changed")
+	}
+	select {
+	case <-fetchCalls:
+		t.Fatal("old account reached the fetcher")
+	default:
+	}
+	if m.state.Account != "acct-two" || len(m.state.Baseline) != 0 || len(m.state.Bells) != 0 {
+		t.Fatalf("stale credentials reset or restored account state: %#v", m.state)
+	}
+}
+
 type blockingFetcher struct {
 	started chan struct{}
 	release chan struct{}
@@ -442,6 +659,7 @@ func TestRunWakesForIntervalChangeAndExits(t *testing.T) {
 	settings.IntervalSeconds = 10
 	m, _ := New(signalFetcher{calls}, func(context.Context) (string, string, error) { return "", "acct", nil }, &memoryStore{}, nil, settings)
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	done := make(chan struct{})
 	go func() { m.Run(ctx); close(done) }()
 	select {
@@ -455,7 +673,9 @@ func TestRunWakesForIntervalChangeAndExits(t *testing.T) {
 	}
 	select {
 	case <-calls:
-	case <-time.After(1800 * time.Millisecond):
+	// The scheduler waits for the newly selected one-second interval after
+	// consuming the wake; leave headroom for race-enabled and busy CI hosts.
+	case <-time.After(5 * time.Second):
 		t.Fatal("interval change did not wake polling timer")
 	}
 	cancel()
@@ -546,4 +766,128 @@ func TestReviewRemovalKeepsExplicitBellAcrossRestart(t *testing.T) {
 	if !restarted.Snapshot().PullRequests[0].Bell {
 		t.Fatal("bell not restored")
 	}
+}
+
+func TestReviewRequestNodeIDsDetectReRequestsAndAddedTeams(t *testing.T) {
+	pr := model.PullRequest{ID: "review-identity", ReviewRequested: true, ReviewRequestIDs: []string{"direct-1"}}
+	withTeam := pr
+	withTeam.ReviewRequestIDs = []string{"direct-1", "team-1"}
+	removedTeam := pr
+	rerequested := pr
+	rerequested.ReviewRequestIDs = []string{"direct-1", "team-2"}
+	duplicateNewTeam := rerequested
+	duplicateNewTeam.ReviewRequestIDs = []string{"direct-1", "team-2", "team-3"}
+	duplicateNewTeamCopy := duplicateNewTeam
+	f := &sequenceFetcher{results: []model.FetchResult{
+		{PullRequests: []model.PullRequest{pr}},
+		{PullRequests: []model.PullRequest{withTeam}},
+		{PullRequests: []model.PullRequest{removedTeam}},
+		{PullRequests: []model.PullRequest{rerequested}},
+		{PullRequests: []model.PullRequest{duplicateNewTeam, duplicateNewTeamCopy}},
+	}}
+	s, n := &memoryStore{}, &recorded{}
+	m, err := New(f, func(context.Context) (string, string, error) { return "", "account", nil }, s, n, model.DefaultSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range f.results {
+		if err := m.Refresh(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []Event{EventReviewRequested, EventReviewRequested, EventReviewRequested}
+	if got := n.list(); !equalEvents(got, want) {
+		t.Fatalf("events=%v want=%v", got, want)
+	}
+	if got := s.state.Baseline[pr.ID].ReviewRequestIDs; !equalStrings(got, []string{"direct-1", "team-2", "team-3"}) {
+		t.Fatalf("persisted request IDs=%v", got)
+	}
+}
+
+func TestReviewRequestIDsSurviveRestartWithoutReplayAndUpgradeSilently(t *testing.T) {
+	pr := model.PullRequest{ID: "review-upgrade", ReviewRequested: true, ReviewRequestIDs: []string{"request-1"}}
+	s := &memoryStore{state: storage.State{Account: "account", Bells: map[string]bool{}, Initialized: true, Baseline: map[string]storage.Observed{
+		pr.ID: {ReviewRequested: true}, // schema written before request identities were tracked
+	}}}
+	n := &recorded{}
+	creds := func(context.Context) (string, string, error) { return "", "account", nil }
+	f := &sequenceFetcher{results: []model.FetchResult{{PullRequests: []model.PullRequest{pr}}, {PullRequests: []model.PullRequest{pr}}}}
+	m, err := New(f, creds, s, n, model.DefaultSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := n.list(); len(got) != 0 {
+		t.Fatalf("upgrade or restart replayed a review request: %v", got)
+	}
+	if got := s.state.Baseline[pr.ID].ReviewRequestIDs; !equalStrings(got, []string{"request-1"}) {
+		t.Fatalf("upgrade did not seed IDs: %v", got)
+	}
+
+	restartFetcher := &sequenceFetcher{results: []model.FetchResult{{PullRequests: []model.PullRequest{pr}}}}
+	restarted, err := New(restartFetcher, creds, s, n, model.DefaultSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := n.list(); len(got) != 0 {
+		t.Fatalf("unchanged request replayed after restart: %v", got)
+	}
+	removed := pr
+	removed.ReviewRequested = false
+	removed.ReviewRequestIDs = nil
+	rerequest := pr
+	rerequest.ReviewRequestIDs = []string{"request-2"}
+	restartFetcher.results = append(restartFetcher.results, model.FetchResult{PullRequests: []model.PullRequest{removed}}, model.FetchResult{PullRequests: []model.PullRequest{rerequest}})
+	if err := restarted.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := n.list(); !equalEvents(got, []Event{EventReviewRequested}) {
+		t.Fatalf("false-to-true transition not notified: %v", got)
+	}
+}
+
+func TestReviewRequestIDSlicesAreCopiedAcrossSnapshotAndPersistence(t *testing.T) {
+	ids := []string{"request-1"}
+	pr := model.PullRequest{ID: "copy-check", ReviewRequested: true, ReviewRequestIDs: ids}
+	f := &sequenceFetcher{results: []model.FetchResult{{PullRequests: []model.PullRequest{pr}}}}
+	s := &memoryStore{}
+	m, err := New(f, func(context.Context) (string, string, error) { return "", "account", nil }, s, &recorded{}, model.DefaultSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ids[0] = "mutated-fetcher"
+	one := m.Snapshot()
+	one.PullRequests[0].ReviewRequestIDs[0] = "mutated-snapshot"
+	if got := m.Snapshot().PullRequests[0].ReviewRequestIDs; !equalStrings(got, []string{"request-1"}) {
+		t.Fatalf("snapshot aliases internal request IDs: %v", got)
+	}
+	if got := s.state.Baseline[pr.ID].ReviewRequestIDs; !equalStrings(got, []string{"request-1"}) {
+		t.Fatalf("persisted baseline aliases fetch data: %v", got)
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

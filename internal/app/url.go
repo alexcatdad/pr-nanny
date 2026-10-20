@@ -15,5 +15,11 @@ func ValidPRURL(raw string) bool {
 		return false
 	}
 	u, err := url.Parse(raw)
+	if err == nil {
+		parts := strings.Split(u.Path, "/")
+		if len(parts) == 5 && (parts[2] == "." || parts[2] == "..") {
+			return false
+		}
+	}
 	return err == nil && u.Scheme == "https" && u.Host == "github.com" && u.User == nil && u.RawPath == "" && u.RawQuery == "" && !u.ForceQuery && u.Fragment == "" && prPath.MatchString(u.Path)
 }

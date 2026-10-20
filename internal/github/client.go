@@ -81,10 +81,12 @@ type graphRequest struct {
 
 type graphEnvelope struct {
 	Data   json.RawMessage `json:"data"`
-	Errors []struct {
-		Type string `json:"type"`
-		Path []any  `json:"path"`
-	} `json:"errors"`
+	Errors []graphError    `json:"errors"`
+}
+
+type graphError struct {
+	Type string `json:"type"`
+	Path []any  `json:"path"`
 }
 
 func (c *Client) Fetch(ctx context.Context, token, account string, trackedIDs []string) (model.FetchResult, error) {
@@ -241,7 +243,7 @@ func (c *Client) viewerTeams(ctx context.Context, token, login string) ([]string
 	return teams, nil
 }
 
-const pullFragment = `nodes{__typename ... on PullRequest{id number title url createdAt updatedAt closedAt merged author{login} reviewDecision latestReviews(first:100){nodes{author{login} state} pageInfo{hasNextPage endCursor}} reviewRequests(first:100){nodes{requestedReviewer{__typename ... on User{login} ... on Team{slug organization{login}}}} pageInfo{hasNextPage endCursor}} statusCheckRollup{state contexts(first:100){nodes{__typename ... on CheckRun{status conclusion} ... on StatusContext{state}} pageInfo{hasNextPage endCursor}}} repository{nameWithOwner}}}`
+const pullFragment = `nodes{__typename ... on PullRequest{id number title url createdAt updatedAt closedAt merged author{login} latestReviews:latestOpinionatedReviews(first:100){nodes{author{login} state} pageInfo{hasNextPage endCursor}} reviewRequests(first:100){nodes{id requestedReviewer{__typename ... on User{login} ... on Team{slug organization{login}}}} pageInfo{hasNextPage endCursor}} statusCheckRollup{state contexts(first:100){nodes{__typename ... on CheckRun{status conclusion} ... on StatusContext{state}} pageInfo{hasNextPage endCursor}}} repository{nameWithOwner}}}`
 
 func (c *Client) fetchSearch(ctx context.Context, token, login, search string, teams []string, dst map[string]model.PullRequest) error {
 	const query = `query($search:String!,$after:String){search(query:$search,type:ISSUE,first:100,after:$after){issueCount pageInfo{hasNextPage endCursor} ` + pullFragment + `}}`
@@ -294,7 +296,7 @@ func (c *Client) fetchTracked(ctx context.Context, token, login string, teams, i
 			return nil, nil, ErrInvalidInput
 		}
 	}
-	const query = `query($ids:[ID!]!){nodes(ids:$ids){__typename ... on PullRequest{id number title url createdAt updatedAt closedAt merged author{login} reviewDecision latestReviews(first:100){nodes{author{login} state} pageInfo{hasNextPage endCursor}} reviewRequests(first:100){nodes{requestedReviewer{__typename ... on User{login} ... on Team{slug organization{login}}}} pageInfo{hasNextPage endCursor}} statusCheckRollup{state contexts(first:100){nodes{__typename ... on CheckRun{status conclusion} ... on StatusContext{state}} pageInfo{hasNextPage endCursor}}} repository{nameWithOwner}}}}`
+	const query = `query($ids:[ID!]!){nodes(ids:$ids){__typename ... on PullRequest{id number title url createdAt updatedAt closedAt merged author{login} latestReviews:latestOpinionatedReviews(first:100){nodes{author{login} state} pageInfo{hasNextPage endCursor}} reviewRequests(first:100){nodes{id requestedReviewer{__typename ... on User{login} ... on Team{slug organization{login}}}} pageInfo{hasNextPage endCursor}} statusCheckRollup{state contexts(first:100){nodes{__typename ... on CheckRun{status conclusion} ... on StatusContext{state}} pageInfo{hasNextPage endCursor}}} repository{nameWithOwner}}}}`
 	var data struct {
 		Nodes []json.RawMessage `json:"nodes"`
 	}
@@ -366,11 +368,11 @@ func (c *Client) request(ctx context.Context, token, query string, variables map
 		return ErrAuth
 	}
 	if resp.StatusCode >= 500 {
-		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		return ErrServer
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		return ErrUnavailable
 	}
 	var envelope graphEnvelope
@@ -378,7 +380,7 @@ func (c *Client) request(ctx context.Context, token, query string, variables map
 		return ErrResponse
 	}
 	if len(envelope.Errors) != 0 {
-		ciOnlyErrors := true
+		allAllowed := true
 		for _, e := range envelope.Errors {
 			if e.Type == "RATE_LIMITED" {
 				return rateError(resp)
@@ -389,12 +391,16 @@ func (c *Client) request(ctx context.Context, token, query string, variables map
 					ciPath = true
 				}
 			}
-			ciOnlyErrors = ciOnlyErrors && ciPath
-			if (e.Type == "UNAUTHORIZED" || e.Type == "FORBIDDEN") && !ciPath {
+			trackedNodeError := strings.Contains(query, "nodes(ids:") && trackedNodeErrorMatchesNullNode(e, envelope.Data)
+			if ciPath || trackedNodeError {
+				continue
+			}
+			allAllowed = false
+			if e.Type == "UNAUTHORIZED" || e.Type == "FORBIDDEN" {
 				return ErrAuth
 			}
 		}
-		if !ciOnlyErrors {
+		if !allAllowed {
 			return ErrResponse
 		}
 	}
@@ -408,6 +414,25 @@ func (c *Client) request(ctx context.Context, token, query string, variables map
 		return ErrResponse
 	}
 	return nil
+}
+
+func trackedNodeErrorMatchesNullNode(e graphError, data json.RawMessage) bool {
+	if e.Type != "NOT_FOUND" && e.Type != "FORBIDDEN" || len(e.Path) != 2 || e.Path[0] != "nodes" {
+		return false
+	}
+	index, ok := e.Path[1].(float64)
+	if !ok || index < 0 || index != float64(int(index)) {
+		return false
+	}
+	var root map[string]json.RawMessage
+	if json.Unmarshal(data, &root) != nil {
+		return false
+	}
+	var nodes []json.RawMessage
+	if json.Unmarshal(root["nodes"], &nodes) != nil || int(index) >= len(nodes) {
+		return false
+	}
+	return string(bytes.TrimSpace(nodes[int(index)])) == "null"
 }
 
 // GraphQL structs with zero values can make truncated successful responses
@@ -470,8 +495,8 @@ func validGraphShape(data json.RawMessage, query string, allowUnavailableCI bool
 		var nodes []json.RawMessage
 		return json.Unmarshal(path("nodes"), &nodes) == nil && validPRConnectionNodes(path("nodes"), allowUnavailableCI)
 	case strings.Contains(query, "reviewRequests(first:100,after:"):
-		return object(path("node")) != nil && connection("node", "reviewRequests")
-	case strings.Contains(query, "latestReviews(first:100,after:"):
+		return object(path("node")) != nil && connection("node", "reviewRequests") && validRequestNodeIDs(path("node", "reviewRequests", "nodes"))
+	case strings.Contains(query, "latestOpinionatedReviews(first:100,after:"):
 		return object(path("node")) != nil && connection("node", "latestReviews")
 	case strings.Contains(query, "contexts(first:100,after:"):
 		if object(path("node")) == nil {
@@ -524,6 +549,9 @@ func validPRConnectionNodes(raw json.RawMessage, allowUnavailableCI bool) bool {
 			if json.Unmarshal(page["hasNextPage"], &more) != nil {
 				return false
 			}
+			if name == "reviewRequests" && !validRequestNodeIDs(decoded["nodes"]) {
+				return false
+			}
 		}
 		ci := pr["statusCheckRollup"]
 		if len(ci) == 0 && allowUnavailableCI {
@@ -543,6 +571,22 @@ func validPRConnectionNodes(raw json.RawMessage, allowUnavailableCI bool) bool {
 					return false
 				}
 			}
+		}
+	}
+	return true
+}
+
+func validRequestNodeIDs(raw json.RawMessage) bool {
+	var nodes []json.RawMessage
+	if json.Unmarshal(raw, &nodes) != nil {
+		return false
+	}
+	for _, node := range nodes {
+		var request struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(node, &request) != nil || !validNodeID(request.ID) {
+			return false
 		}
 	}
 	return true
@@ -591,7 +635,7 @@ func rateError(resp *http.Response) error {
 			}
 		}
 	}
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	return &RateLimitError{RetryAfter: delay}
 }
 
@@ -617,8 +661,7 @@ type rawPR struct {
 	Author    struct {
 		Login string `json:"login"`
 	} `json:"author"`
-	ReviewDecision *string `json:"reviewDecision"`
-	LatestReviews  struct {
+	LatestReviews struct {
 		Nodes []struct {
 			Author struct {
 				Login string `json:"login"`
@@ -632,6 +675,7 @@ type rawPR struct {
 	} `json:"latestReviews"`
 	ReviewRequests struct {
 		Nodes []struct {
+			ID                string `json:"id"`
 			RequestedReviewer struct {
 				Type         string `json:"__typename"`
 				Login        string `json:"login"`
@@ -662,7 +706,7 @@ type rawPR struct {
 }
 
 func (c *Client) completeReviewPages(ctx context.Context, token string, raw rawPR) (rawPR, error) {
-	const requestQuery = `query($id:ID!,$after:String){node(id:$id){... on PullRequest{reviewRequests(first:100,after:$after){nodes{requestedReviewer{__typename ... on User{login} ... on Team{slug organization{login}}}} pageInfo{hasNextPage endCursor}}}}}`
+	const requestQuery = `query($id:ID!,$after:String){node(id:$id){... on PullRequest{reviewRequests(first:100,after:$after){nodes{id requestedReviewer{__typename ... on User{login} ... on Team{slug organization{login}}}} pageInfo{hasNextPage endCursor}}}}}`
 	for page := 0; raw.ReviewRequests.PageInfo.HasNextPage; page++ {
 		if page >= maxConnections || raw.ReviewRequests.PageInfo.EndCursor == "" {
 			return rawPR{}, ErrResponse
@@ -671,6 +715,7 @@ func (c *Client) completeReviewPages(ctx context.Context, token string, raw rawP
 			Node *struct {
 				ReviewRequests struct {
 					Nodes []struct {
+						ID                string `json:"id"`
 						RequestedReviewer struct {
 							Type         string `json:"__typename"`
 							Login        string `json:"login"`
@@ -696,7 +741,7 @@ func (c *Client) completeReviewPages(ctx context.Context, token string, raw rawP
 		raw.ReviewRequests.Nodes = append(raw.ReviewRequests.Nodes, data.Node.ReviewRequests.Nodes...)
 		raw.ReviewRequests.PageInfo = data.Node.ReviewRequests.PageInfo
 	}
-	const reviewsQuery = `query($id:ID!,$after:String){node(id:$id){... on PullRequest{latestReviews(first:100,after:$after){nodes{author{login} state} pageInfo{hasNextPage endCursor}}}}}`
+	const reviewsQuery = `query($id:ID!,$after:String){node(id:$id){... on PullRequest{latestReviews:latestOpinionatedReviews(first:100,after:$after){nodes{author{login} state} pageInfo{hasNextPage endCursor}}}}}`
 	for page := 0; raw.LatestReviews.PageInfo.HasNextPage; page++ {
 		if page >= maxConnections || raw.LatestReviews.PageInfo.EndCursor == "" {
 			return rawPR{}, ErrResponse
@@ -774,7 +819,7 @@ func (r rawPR) normalize(login string, teams []string) (model.PullRequest, error
 		}
 		closed = &t
 	}
-	if !validNodeID(r.ID) || r.Number <= 0 || !validRepo(r.Repository.NameWithOwner) || !validPRURL(r.URL) || !validLogin(r.Author.Login) || r.LatestReviews.PageInfo.HasNextPage || r.ReviewRequests.PageInfo.HasNextPage {
+	if !validNodeID(r.ID) || r.Number <= 0 || !validRepo(r.Repository.NameWithOwner) || !validPRURLFor(r.URL, r.Repository.NameWithOwner, r.Number) || !validLogin(r.Author.Login) || r.LatestReviews.PageInfo.HasNextPage || r.ReviewRequests.PageInfo.HasNextPage {
 		return model.PullRequest{}, ErrResponse
 	}
 	approved := false
@@ -787,22 +832,47 @@ func (r rawPR) normalize(login string, teams []string) (model.PullRequest, error
 		}
 	}
 	reviewRequested := false
+	var reviewRequestIDs []string
 	for _, req := range r.ReviewRequests.Nodes {
+		if !validNodeID(req.ID) {
+			return model.PullRequest{}, ErrResponse
+		}
+		matches := false
 		if strings.EqualFold(req.RequestedReviewer.Login, login) {
 			reviewRequested = true
+			matches = true
 		}
 		if req.RequestedReviewer.Type == "Team" {
 			name := req.RequestedReviewer.Organization.Login + "/" + req.RequestedReviewer.Slug
 			for _, team := range teams {
 				if strings.EqualFold(team, name) {
 					reviewRequested = true
+					matches = true
 					break
 				}
 			}
 		}
+		if matches {
+			reviewRequestIDs = append(reviewRequestIDs, req.ID)
+		}
 	}
-	pr := model.PullRequest{ID: r.ID, Number: r.Number, Title: r.Title, Repository: r.Repository.NameWithOwner, URL: r.URL, CreatedAt: created, UpdatedAt: updated, ClosedAt: closed, Merged: r.Merged, Approved: approved, CI: normalizeCI(r.StatusCheckRollup), Authored: strings.EqualFold(r.Author.Login, login), ReviewRequested: reviewRequested}
+	sort.Strings(reviewRequestIDs)
+	reviewRequestIDs = uniqueStrings(reviewRequestIDs)
+	pr := model.PullRequest{ID: r.ID, Number: r.Number, Title: r.Title, Repository: r.Repository.NameWithOwner, URL: r.URL, CreatedAt: created, UpdatedAt: updated, ClosedAt: closed, Merged: r.Merged, Approved: approved, CI: normalizeCI(r.StatusCheckRollup), Authored: strings.EqualFold(r.Author.Login, login), ReviewRequested: reviewRequested, ReviewRequestIDs: reviewRequestIDs}
 	return pr, nil
+}
+
+func uniqueStrings(values []string) []string {
+	if len(values) < 2 {
+		return values
+	}
+	out := values[:1]
+	for _, value := range values[1:] {
+		if value != out[len(out)-1] {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func normalizeCI(rollup *struct {
@@ -872,16 +942,41 @@ func normalizeCI(rollup *struct {
 }
 
 func validPRURL(raw string) bool {
+	_, _, _, ok := parsePRURL(raw)
+	return ok
+}
+
+func validPRURLFor(raw, repository string, number int) bool {
+	owner, repo, gotNumber, ok := parsePRURL(raw)
+	parts := strings.Split(repository, "/")
+	return ok && len(parts) == 2 && number > 0 && gotNumber == number && strings.EqualFold(owner, parts[0]) && strings.EqualFold(repo, parts[1])
+}
+
+func parsePRURL(raw string) (owner, repo string, number int, ok bool) {
+	if len(raw) > 2048 || strings.TrimSpace(raw) != raw || strings.ContainsAny(raw, "\\\r\n\t") {
+		return "", "", 0, false
+	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Host != "github.com" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return false
+	if err != nil || u.Scheme != "https" || u.Host != "github.com" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawPath != "" || u.EscapedPath() != u.Path {
+		return "", "", 0, false
 	}
-	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(parts) != 4 || parts[2] != "pull" || !validLogin(parts[0]) || !validRepoComponent(parts[1]) {
-		return false
+	parts := strings.Split(u.Path, "/")
+	if len(parts) != 5 || parts[0] != "" || parts[3] != "pull" || !validLogin(parts[1]) || !validRepoComponent(parts[2]) {
+		return "", "", 0, false
 	}
-	_, err = strconv.Atoi(parts[3])
-	return err == nil && parts[3] != "0"
+	for _, ch := range parts[4] {
+		if ch < '0' || ch > '9' {
+			return "", "", 0, false
+		}
+	}
+	if parts[4] == "" || parts[4][0] == '0' {
+		return "", "", 0, false
+	}
+	n, err := strconv.Atoi(parts[4])
+	if err != nil || n <= 0 {
+		return "", "", 0, false
+	}
+	return parts[1], parts[2], n, true
 }
 
 func validToken(s string) bool { return len(s) >= 20 && len(s) <= 300 && strings.TrimSpace(s) == s }
@@ -930,7 +1025,7 @@ func validNodeID(s string) bool {
 		return false
 	}
 	for _, r := range s {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-') {
+		if r < 0x21 || r > 0x7e {
 			return false
 		}
 	}

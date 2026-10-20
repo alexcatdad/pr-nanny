@@ -19,6 +19,10 @@ import (
 const schemaVersion = 1
 const maxFileBytes = 8 << 20
 const maxTrackedPRs = 10000
+const maxReviewRequestIDs = 10000
+const maxStoredReviewRequestIDs = 100000
+const maxReviewRequestIDBytes = 256
+const maxStoredReviewRequestIDBytes = 2 << 20
 
 var ErrCorrupt = errors.New("stored application data is invalid")
 
@@ -33,12 +37,13 @@ type State struct {
 
 // Observed is the last successfully observed notification-relevant PR state.
 type Observed struct {
-	CI              model.CI   `json:"ci"`
-	Approved        bool       `json:"approved"`
-	ReviewRequested bool       `json:"reviewRequested"`
-	Merged          bool       `json:"merged"`
-	Closed          bool       `json:"closed"`
-	ClosedAt        *time.Time `json:"closedAt,omitempty"`
+	CI               model.CI   `json:"ci"`
+	Approved         bool       `json:"approved"`
+	ReviewRequested  bool       `json:"reviewRequested"`
+	ReviewRequestIDs []string   `json:"reviewRequestIds,omitempty"`
+	Merged           bool       `json:"merged"`
+	Closed           bool       `json:"closed"`
+	ClosedAt         *time.Time `json:"closedAt,omitempty"`
 }
 
 type envelope struct {
@@ -118,7 +123,12 @@ func (s *Store) SaveState(state State) error {
 }
 
 func (s *Store) read(name string, dst any) error {
-	f, err := os.Open(filepath.Join(s.dir, name))
+	root, err := os.OpenRoot(s.dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	f, err := root.Open(name)
 	if err != nil {
 		return err
 	}
@@ -157,7 +167,8 @@ func (s *Store) write(name string, value any) error {
 	if err := os.MkdirAll(s.dir, 0o700); err != nil {
 		return fmt.Errorf("create private data directory: %w", err)
 	}
-	if err := os.Chmod(s.dir, 0o700); err != nil {
+	// Directories need owner execute permission for traversal; data files use 0600.
+	if err := os.Chmod(s.dir, 0o700); err != nil { // #nosec G302 -- 0700 is the private directory mode, not a file mode.
 		return fmt.Errorf("protect private data directory: %w", err)
 	}
 	payload, err := json.Marshal(value)
@@ -233,6 +244,8 @@ func validateState(s State) error {
 	if len(s.Account) > 256 || strings.ContainsAny(s.Account, "\r\n\x00") || len(s.Bells) > maxTrackedPRs || len(s.Baseline) > maxTrackedPRs {
 		return ErrCorrupt
 	}
+	totalReviewRequestIDs := 0
+	totalReviewRequestIDBytes := 0
 	for id := range s.Bells {
 		if id == "" || len(id) > 512 {
 			return ErrCorrupt
@@ -247,6 +260,22 @@ func validateState(s State) error {
 		}
 		if o.ClosedAt != nil && o.ClosedAt.IsZero() {
 			return ErrCorrupt
+		}
+		if len(o.ReviewRequestIDs) > maxReviewRequestIDs {
+			return ErrCorrupt
+		}
+		totalReviewRequestIDs += len(o.ReviewRequestIDs)
+		if totalReviewRequestIDs > maxStoredReviewRequestIDs {
+			return ErrCorrupt
+		}
+		for _, requestID := range o.ReviewRequestIDs {
+			if requestID == "" || len(requestID) > maxReviewRequestIDBytes || strings.ContainsAny(requestID, "\r\n\x00") {
+				return ErrCorrupt
+			}
+			totalReviewRequestIDBytes += len(requestID)
+			if totalReviewRequestIDBytes > maxStoredReviewRequestIDBytes {
+				return ErrCorrupt
+			}
 		}
 	}
 	return nil

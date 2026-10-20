@@ -51,7 +51,7 @@ func TestFetchDeduplicatesDirectTeamAuthoredAndTrackedPRs(t *testing.T) {
 				fixture = `{"data":{"search":{"issueCount":1,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[` + prFixture("PR_B", 2, "Direct review", "other", "OPEN", "IN_PROGRESS", true, false) + `]}}}`
 			}
 		case strings.Contains(payload.Query, "nodes(ids:$ids)"):
-			fixture = `{"data":{"nodes":[` + prFixture("PR_A", 1, "Authored", "octocat", "OPEN", "SUCCESS", false, false) + `,` + prFixture("PR_C", 3, "Closed", "other", "CLOSED", "FAILURE", false, true) + `,` + prFixture("PR_D", 4, "Tracked only", "other", "OPEN", "UNKNOWN", false, false) + `,null,` + prFixture("PR_F", 6, "Missed request search", "other", "OPEN", "SUCCESS", true, false) + `]}}`
+			fixture = `{"data":{"nodes":[` + prFixture("PR_A", 1, "Authored", "octocat", "OPEN", "SUCCESS", false, false) + `,` + prFixture("PR_C", 3, "Closed", "other", "CLOSED", "FAILURE", false, true) + `,` + prFixture("PR_D", 4, "Tracked only", "other", "OPEN", "UNKNOWN", false, false) + `,null,` + prFixture("PR_F", 6, "Missed request search", "other", "OPEN", "SUCCESS", true, false) + `]},"errors":[{"type":"NOT_FOUND","path":["nodes",3]}]}`
 		default:
 			t.Fatalf("unexpected query: %s", payload.Query)
 		}
@@ -88,6 +88,41 @@ func TestFetchDeduplicatesDirectTeamAuthoredAndTrackedPRs(t *testing.T) {
 	}
 	if len(result.InaccessibleIDs) != 1 || result.InaccessibleIDs[0] != "PR_E" {
 		t.Fatalf("inaccessible tracked IDs lost: %v", result.InaccessibleIDs)
+	}
+}
+
+func TestTrackedNodePartialErrorsRequireMatchingNullNode(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind string
+		index      int
+		data       string
+		want       error
+	}{
+		{"not found null node", "NOT_FOUND", 0, `{"nodes":[null]}`, nil},
+		{"forbidden null node", "FORBIDDEN", 0, `{"nodes":[null]}`, nil},
+		{"non-null node", "NOT_FOUND", 0, `{"nodes":[{"__typename":"Issue"}]}`, ErrResponse},
+		{"wrong index", "NOT_FOUND", 1, `{"nodes":[null]}`, ErrResponse},
+		{"global forbidden", "FORBIDDEN", 0, `{"nodes":[null]}`, ErrAuth},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			client := NewClient(&http.Client{Transport: roundTrip(func(*http.Request) (*http.Response, error) {
+				calls++
+				path := `"nodes"`
+				if tc.name == "global forbidden" {
+					path = `"repository"`
+				} else {
+					path += `,` + strconv.Itoa(tc.index)
+				}
+				body := `{"data":` + tc.data + `,"errors":[{"type":"` + tc.kind + `","path":[` + path + `]}]}`
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+			})})
+			var out map[string]any
+			err := client.request(context.Background(), testToken, `query($ids:[ID!]!){nodes(ids:$ids){__typename}}`, map[string]any{"ids": []string{"opaque"}}, &out)
+			if (tc.want == nil && err != nil) || (tc.want != nil && !errors.Is(err, tc.want)) || calls != 1 {
+				t.Fatalf("unexpected partial error classification: %v", err)
+			}
+		})
 	}
 }
 
@@ -170,12 +205,37 @@ func TestTrackedIDsAreFetchedInBoundedBatches(t *testing.T) {
 	for i := range ids {
 		ids[i] = "PR_" + strconv.Itoa(i)
 	}
+	ids[0] = "MDQ6VXNlcjE=" // Classic opaque GitHub GraphQL node IDs may use padded Base64.
 	result, err := client.Fetch(context.Background(), testToken, "octocat", ids)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(sizes) != 2 || sizes[0] != 100 || sizes[1] != 1 || len(result.InaccessibleIDs) != 101 {
 		t.Fatalf("tracked IDs were not batched: sizes=%v inaccessible=%d", sizes, len(result.InaccessibleIDs))
+	}
+}
+
+func TestTrackedFetchAcceptsClassicOpaqueNodeID(t *testing.T) {
+	const nodeID = "MDQ6VXNlcjE="
+	client := NewClient(&http.Client{Transport: roundTrip(func(req *http.Request) (*http.Response, error) {
+		var payload graphRequest
+		_ = json.NewDecoder(req.Body).Decode(&payload)
+		var data string
+		switch {
+		case strings.Contains(payload.Query, "organizations(first:100"):
+			data = `{"data":{"viewer":{"login":"octocat","organizations":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`
+		case strings.Contains(payload.Query, "search(query:"):
+			data = `{"data":{"search":{"issueCount":0,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}`
+		case strings.Contains(payload.Query, "nodes(ids:$ids)"):
+			data = `{"data":{"nodes":[` + prFixture(nodeID, 7, "Opaque ID", "other", "OPEN", "SUCCESS", false, false) + `]}}`
+		default:
+			t.Fatalf("unexpected query")
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(data))}, nil
+	})})
+	result, err := client.Fetch(context.Background(), testToken, "octocat", []string{nodeID})
+	if err != nil || len(result.PullRequests) != 1 || result.PullRequests[0].ID != nodeID {
+		t.Fatalf("opaque tracked ID was not returned (count=%d, err=%v)", len(result.PullRequests), err)
 	}
 }
 
@@ -186,7 +246,7 @@ func TestCompleteReviewAndCheckConnectionsPaginates(t *testing.T) {
 		var data string
 		switch {
 		case strings.Contains(payload.Query, "reviewRequests(first:100,after:$after)"):
-			data = `{"data":{"node":{"reviewRequests":{"nodes":[{"requestedReviewer":{"__typename":"User","login":"octocat"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`
+			data = `{"data":{"node":{"reviewRequests":{"nodes":[{"id":"RR_1","requestedReviewer":{"__typename":"User","login":"octocat"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}`
 		case strings.Contains(payload.Query, "contexts(first:100,after:$after)"):
 			data = `{"data":{"node":{"statusCheckRollup":{"contexts":{"nodes":[{"__typename":"StatusContext","state":"SUCCESS"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`
 		default:
@@ -275,9 +335,61 @@ func TestNormalizeCIBoundariesAndPRURLValidation(t *testing.T) {
 	if !validPRURL("https://github.com/acme/project/pull/42") {
 		t.Fatal("valid PR URL rejected")
 	}
-	for _, raw := range []string{"https://github.com.evil/acme/project/pull/42", "https://github.com/acme/project/issues/42", "https://github.com/acme/project/pull/42?x=1", "javascript:alert(1)"} {
+	if !validPRURLFor("https://github.com/acme/project/pull/42", "acme/project", 42) || validPRURLFor("https://github.com/acme/project/pull/42", "acme/other", 42) || validPRURLFor("https://github.com/acme/project/pull/42", "acme/project", 43) {
+		t.Fatal("PR URL repository/number consistency check failed")
+	}
+	for _, raw := range []string{"https://github.com.evil/acme/project/pull/42", "https://github.com/acme/project/issues/42", "https://github.com/acme/project/pull/42?x=1", "https://github.com/acme/project/pull/42?", "https://github.com/acme/project/pull/+42", "https://github.com/acme/project/pull/042", "https://github.com/acme/%2e%2e/pull/42", "https://github.com/acme/project/pull/42/", "javascript:alert(1)"} {
 		if validPRURL(raw) {
 			t.Fatalf("unsafe URL accepted: %s", raw)
+		}
+	}
+}
+
+func TestApprovalUsesLatestOpinionatedReviewStates(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		reviews string
+		want    bool
+	}{
+		{"comment after approval is not an approval", `[{"author":{"login":"reviewer"},"state":"COMMENTED"}]`, false},
+		{"approval remains current alongside another reviewer's changes request", `[{"author":{"login":"reviewer"},"state":"APPROVED"},{"author":{"login":"other-reviewer"},"state":"CHANGES_REQUESTED"}]`, true},
+		{"dismissal is not an approval", `[{"author":{"login":"reviewer"},"state":"DISMISSED"}]`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var raw rawPR
+			fixture := `{"id":"PR_X","number":1,"title":"test","url":"https://github.com/acme/project/pull/1","createdAt":"2026-10-01T10:00:00Z","updatedAt":"2026-10-20T09:00:00Z","author":{"login":"author"},"latestReviews":{"nodes":` + tc.reviews + `,"pageInfo":{"hasNextPage":false}},"reviewRequests":{"nodes":[],"pageInfo":{"hasNextPage":false}},"repository":{"nameWithOwner":"acme/project"}}`
+			if err := json.Unmarshal([]byte(fixture), &raw); err != nil {
+				t.Fatal("invalid synthetic review fixture")
+			}
+			pr, err := raw.normalize("octocat", nil)
+			if err != nil || pr.Approved != tc.want {
+				t.Fatalf("approval=%t, want %t (err=%v)", pr.Approved, tc.want, err)
+			}
+		})
+	}
+}
+
+func TestNormalizeReviewRequestIDsIncludesMatchingDirectAndTeamOnly(t *testing.T) {
+	var raw rawPR
+	fixture := `{"id":"PR_X","number":1,"title":"test","url":"https://github.com/acme/project/pull/1","createdAt":"2026-10-01T10:00:00Z","updatedAt":"2026-10-20T09:00:00Z","author":{"login":"author"},"latestReviews":{"nodes":[],"pageInfo":{"hasNextPage":false}},"reviewRequests":{"nodes":[{"id":"UHVsbFJlcXVlc3RSZXF1ZXN0LzE=","requestedReviewer":{"__typename":"Team","slug":"engineering","organization":{"login":"acme"}}},{"id":"RR_OTHER","requestedReviewer":{"__typename":"Team","slug":"finance","organization":{"login":"acme"}}},{"id":"RR/+/==","requestedReviewer":{"__typename":"User","login":"octocat"}}],"pageInfo":{"hasNextPage":false}},"repository":{"nameWithOwner":"acme/project"}}`
+	if err := json.Unmarshal([]byte(fixture), &raw); err != nil {
+		t.Fatal("invalid synthetic request fixture")
+	}
+	pr, err := raw.normalize("octocat", []string{"acme/engineering"})
+	if err != nil || !pr.ReviewRequested || strings.Join(pr.ReviewRequestIDs, ",") != "RR/+/==,UHVsbFJlcXVlc3RSZXF1ZXN0LzE=" {
+		t.Fatalf("matching request IDs = %v, requested=%t, err=%v", pr.ReviewRequestIDs, pr.ReviewRequested, err)
+	}
+}
+
+func TestOpaqueNodeIDBoundaries(t *testing.T) {
+	for _, id := range []string{"MDQ6VXNlcjE=", "RR/+/==", "PRR_kwDOA"} {
+		if !validNodeID(id) {
+			t.Fatalf("valid opaque node ID rejected")
+		}
+	}
+	for _, id := range []string{"", strings.Repeat("A", 129), "PR\nID", "PR ID", "PR\x00ID", "é"} {
+		if validNodeID(id) {
+			t.Fatal("invalid opaque node ID accepted")
 		}
 	}
 }
@@ -289,10 +401,10 @@ func prFixture(id string, number int, title, author, state, ci string, requested
 	}
 	reviewReq := `[]`
 	if requested {
-		reviewReq = `[{"requestedReviewer":{"__typename":"User","login":"octocat"}}]`
+		reviewReq = `[{"id":"RR_DIRECT","requestedReviewer":{"__typename":"User","login":"octocat"}}]`
 	}
 	if state == "OPEN" && id == "PR_B" {
-		reviewReq = `[{"requestedReviewer":{"__typename":"Team","slug":"engineering","organization":{"login":"acme"}}}]`
+		reviewReq = `[{"id":"RR_TEAM","requestedReviewer":{"__typename":"Team","slug":"engineering","organization":{"login":"acme"}}}]`
 	}
 	status, conclusion, statusState := "COMPLETED", ci, ci
 	if ci == "IN_PROGRESS" {
@@ -303,7 +415,7 @@ func prFixture(id string, number int, title, author, state, ci string, requested
 		status = "COMPLETED"
 		conclusion = ""
 	}
-	return `{"__typename":"PullRequest","id":"` + id + `","number":` + strconv.Itoa(number) + `,"title":"` + title + `","url":"https://github.com/acme/project/pull/` + strconv.Itoa(number) + `","createdAt":"2026-10-01T10:00:00Z","updatedAt":"2026-10-20T09:00:00Z","closedAt":` + closedAt + `,"merged":` + strconv.FormatBool(closed && ci == "FAILURE") + `,"author":{"login":"` + author + `"},"reviewDecision":"APPROVED","latestReviews":{"nodes":[{"author":{"login":"reviewer"},"state":"APPROVED"}],"pageInfo":{"hasNextPage":false,"endCursor":null}},"reviewRequests":{"nodes":` + reviewReq + `,"pageInfo":{"hasNextPage":false,"endCursor":null}},"statusCheckRollup":{"state":"` + statusState + `","contexts":{"nodes":[{"__typename":"CheckRun","status":"` + status + `","conclusion":` + nullableString(conclusion) + `}],"pageInfo":{"hasNextPage":false,"endCursor":null}}},"repository":{"nameWithOwner":"acme/project"}}`
+	return `{"__typename":"PullRequest","id":"` + id + `","number":` + strconv.Itoa(number) + `,"title":"` + title + `","url":"https://github.com/acme/project/pull/` + strconv.Itoa(number) + `","createdAt":"2026-10-01T10:00:00Z","updatedAt":"2026-10-20T09:00:00Z","closedAt":` + closedAt + `,"merged":` + strconv.FormatBool(closed && ci == "FAILURE") + `,"author":{"login":"` + author + `"},"latestReviews":{"nodes":[{"author":{"login":"reviewer"},"state":"APPROVED"}],"pageInfo":{"hasNextPage":false,"endCursor":null}},"reviewRequests":{"nodes":` + reviewReq + `,"pageInfo":{"hasNextPage":false,"endCursor":null}},"statusCheckRollup":{"state":"` + statusState + `","contexts":{"nodes":[{"__typename":"CheckRun","status":"` + status + `","conclusion":` + nullableString(conclusion) + `}],"pageInfo":{"hasNextPage":false,"endCursor":null}}},"repository":{"nameWithOwner":"acme/project"}}`
 }
 
 func nullableString(s string) string {

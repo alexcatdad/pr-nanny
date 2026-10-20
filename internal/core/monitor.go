@@ -67,6 +67,8 @@ type Monitor struct {
 	refreshing  bool
 	retryAt     time.Time
 	generation  uint64
+	// pollAttemptHook is an optional synchronization seam for scheduler tests.
+	pollAttemptHook func(error)
 }
 
 func New(fetcher Fetcher, creds Credentials, store Persistence, notifier Notifier, settings model.Settings) (*Monitor, error) {
@@ -83,15 +85,16 @@ func New(fetcher Fetcher, creds Credentials, store Persistence, notifier Notifie
 	if state.Baseline == nil {
 		state.Baseline = map[string]storage.Observed{}
 	}
+	state.Baseline = cloneBaseline(state.Baseline)
 	if pruneExpiredState(&state, time.Now()) {
-		if err := store.SaveState(state); err != nil {
+		if err := store.SaveState(cloneState(state)); err != nil {
 			return nil, err
 		}
 	}
 	if state.Account != "" && state.Account != settings.Account {
 		state.Bells, state.Baseline, state.Initialized = map[string]bool{}, map[string]storage.Observed{}, false
 		state.Account = settings.Account
-		if err := store.SaveState(state); err != nil {
+		if err := store.SaveState(cloneState(state)); err != nil {
 			return nil, err
 		}
 	}
@@ -106,7 +109,7 @@ func (m *Monitor) SetSettings(settings model.Settings) error {
 		previous := m.state
 		m.state.Bells, m.state.Baseline, m.state.Initialized = map[string]bool{}, map[string]storage.Observed{}, false
 		m.state.Account = settings.Account
-		if err := m.store.SaveState(m.state); err != nil {
+		if err := m.store.SaveState(cloneState(m.state)); err != nil {
 			m.state = previous
 			m.mu.Unlock()
 			return err
@@ -142,7 +145,8 @@ func (m *Monitor) SetBell(id string, enabled bool) error {
 	} else {
 		delete(candidate.Bells, id)
 	}
-	if err := m.store.SaveState(candidate); err != nil {
+	candidate.Baseline = cloneBaseline(candidate.Baseline)
+	if err := m.store.SaveState(cloneState(candidate)); err != nil {
 		return err
 	}
 	m.state = candidate
@@ -159,22 +163,41 @@ func (m *Monitor) Refresh(ctx context.Context) error {
 	if !m.refreshMu.TryLock() {
 		return ErrRefreshInProgress
 	}
-	defer m.refreshMu.Unlock()
+	var generation uint64
+	capturedGeneration := false
+	defer func() {
+		stale := false
+		if capturedGeneration {
+			m.mu.Lock()
+			m.refreshing = false
+			stale = generation != m.generation
+			m.mu.Unlock()
+		}
+		m.refreshMu.Unlock()
+		if stale {
+			m.wakeRun(true)
+		}
+	}()
 	m.mu.Lock()
 	if !m.retryAt.IsZero() && m.now().Before(m.retryAt) {
 		m.mu.Unlock()
 		return ErrBackoff
 	}
 	m.refreshing = true
-	generation := m.generation
+	generation = m.generation
+	capturedGeneration = true
 	m.mu.Unlock()
-	defer func() { m.mu.Lock(); m.refreshing = false; m.mu.Unlock() }()
 	token, account, err := m.creds(ctx)
+	m.mu.Lock()
+	if generation != m.generation {
+		m.mu.Unlock()
+		return errors.New("settings changed during refresh")
+	}
 	if err != nil {
-		m.setFailure(err)
+		m.setFailureLocked(err)
+		m.mu.Unlock()
 		return err
 	}
-	m.mu.Lock()
 	if m.settings.Account != "" && account != "" && m.settings.Account != account {
 		m.connection, m.message = "authentication_error", "GitHub account changed; refresh settings"
 		m.mu.Unlock()
@@ -183,18 +206,18 @@ func (m *Monitor) Refresh(ctx context.Context) error {
 	accountChanged := m.state.Account != "" && account != "" && m.state.Account != account
 	if accountChanged {
 		reset := storage.State{Account: account, Bells: map[string]bool{}, Baseline: map[string]storage.Observed{}, Initialized: false}
-		if err := m.store.SaveState(reset); err != nil {
+		if err := m.store.SaveState(cloneState(reset)); err != nil {
+			m.setFailureLocked(err)
 			m.mu.Unlock()
-			m.setFailure(err)
 			return err
 		}
 		m.state = reset
 		m.prs = map[string]model.PullRequest{}
 	}
 	if pruneExpiredState(&m.state, m.now()) {
-		if err := m.store.SaveState(m.state); err != nil {
+		if err := m.store.SaveState(cloneState(m.state)); err != nil {
+			m.setFailureLocked(err)
 			m.mu.Unlock()
-			m.setFailure(err)
 			return err
 		}
 	}
@@ -202,7 +225,13 @@ func (m *Monitor) Refresh(ctx context.Context) error {
 	m.mu.Unlock()
 	result, err := m.fetcher.Fetch(ctx, token, account, tracked)
 	if err != nil {
-		m.setFailure(err)
+		m.mu.Lock()
+		if generation != m.generation {
+			m.mu.Unlock()
+			return errors.New("settings changed during refresh")
+		}
+		m.setFailureLocked(err)
+		m.mu.Unlock()
 		return err
 	}
 	now := m.now()
@@ -222,6 +251,7 @@ func (m *Monitor) Refresh(ctx context.Context) error {
 		if pr.ID == "" {
 			continue
 		}
+		pr.ReviewRequestIDs = normalizeReviewRequestIDs(pr.ReviewRequestIDs)
 		pr.Bell = newState.Bells[pr.ID]
 		cur := observe(pr)
 		prev, exists := old.Baseline[pr.ID]
@@ -244,6 +274,8 @@ func (m *Monitor) Refresh(ctx context.Context) error {
 	}
 	for _, id := range result.InaccessibleIDs {
 		if pr, ok := m.prs[id]; ok {
+			pr.ReviewRequestIDs = append([]string(nil), pr.ReviewRequestIDs...)
+			pr.CI = model.CINotAvailable
 			updated[id] = pr
 		}
 	}
@@ -261,15 +293,19 @@ func (m *Monitor) Refresh(ctx context.Context) error {
 		}
 	}
 	newState.Initialized = true
-	if err := m.store.SaveState(newState); err != nil {
+	if err := m.store.SaveState(cloneState(newState)); err != nil {
+		m.setFailureLocked(err)
 		m.mu.Unlock()
-		m.setFailure(err)
 		return err
 	}
 	m.state = newState
 	m.prs = updated
 	m.connection = "connected"
-	m.message = ""
+	if len(result.InaccessibleIDs) > 0 {
+		m.message = "Some pull requests are inaccessible; cached details may be out of date."
+	} else {
+		m.message = ""
+	}
 	t := now
 	m.lastRefresh = &t
 	m.retryAt = time.Time{}
@@ -297,7 +333,7 @@ func (m *Monitor) transitions(pr model.PullRequest, prev, cur storage.Observed, 
 	}
 	// First appearance establishes baseline. Review requests notify on each false->true
 	// edge even when the per-PR bell is off.
-	if !prev.ReviewRequested && cur.ReviewRequested && settings.Events.ReviewRequested {
+	if settings.Events.ReviewRequested && reviewRequestChanged(prev, cur) {
 		add(EventReviewRequested)
 	}
 	if !bell {
@@ -326,9 +362,7 @@ func (m *Monitor) trackedIDs() []string {
 	defer m.mu.Unlock()
 	return trackedIDs(m.state.Baseline)
 }
-func (m *Monitor) setFailure(err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *Monitor) setFailureLocked(err error) {
 	m.retryAt = time.Time{}
 	var classified ClassifiedError
 	if errors.As(err, &classified) {
@@ -362,6 +396,7 @@ func (m *Monitor) Snapshot() model.Snapshot {
 			continue
 		}
 		pr.Bell = m.state.Bells[pr.ID]
+		pr.ReviewRequestIDs = append([]string(nil), pr.ReviewRequestIDs...)
 		if pr.ClosedAt != nil {
 			t := *pr.ClosedAt
 			pr.ClosedAt = &t
@@ -389,7 +424,11 @@ func (m *Monitor) Run(ctx context.Context) {
 	shouldRefresh := true
 	for {
 		if shouldRefresh {
-			if err := m.Refresh(ctx); err != nil && !errors.Is(err, ErrBackoff) && !errors.Is(err, ErrRefreshInProgress) {
+			err := m.Refresh(ctx)
+			if m.pollAttemptHook != nil {
+				m.pollAttemptHook(err)
+			}
+			if err != nil && !errors.Is(err, ErrBackoff) && !errors.Is(err, ErrRefreshInProgress) {
 				if backoff == 0 {
 					backoff = 5 * time.Second
 				} else {
@@ -476,6 +515,7 @@ func deduplicate(prs []model.PullRequest) []model.PullRequest {
 		if pr.ID == "" {
 			continue
 		}
+		pr.ReviewRequestIDs = append([]string(nil), pr.ReviewRequestIDs...)
 		if prior, ok := byID[pr.ID]; !ok || pr.UpdatedAt.After(prior.UpdatedAt) {
 			byID[pr.ID] = pr
 		}
@@ -494,7 +534,47 @@ func observe(pr model.PullRequest) storage.Observed {
 		v := *pr.ClosedAt
 		closedAt = &v
 	}
-	return storage.Observed{CI: pr.CI, Approved: pr.Approved, ReviewRequested: pr.ReviewRequested, Merged: pr.Merged, Closed: pr.ClosedAt != nil, ClosedAt: closedAt}
+	return storage.Observed{CI: pr.CI, Approved: pr.Approved, ReviewRequested: pr.ReviewRequested,
+		ReviewRequestIDs: normalizeReviewRequestIDs(pr.ReviewRequestIDs), Merged: pr.Merged, Closed: pr.ClosedAt != nil, ClosedAt: closedAt}
+}
+
+func reviewRequestChanged(prev, cur storage.Observed) bool {
+	if !prev.ReviewRequested && cur.ReviewRequested {
+		return true
+	}
+	// Older baseline versions knew only the boolean. Seed the new identity set
+	// without replaying a request that was already active during the upgrade.
+	if !prev.ReviewRequested || !cur.ReviewRequested || len(prev.ReviewRequestIDs) == 0 {
+		return false
+	}
+	previous := make(map[string]struct{}, len(prev.ReviewRequestIDs))
+	for _, id := range prev.ReviewRequestIDs {
+		previous[id] = struct{}{}
+	}
+	for _, id := range cur.ReviewRequestIDs {
+		if _, known := previous[id]; !known {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeReviewRequestIDs(ids []string) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if id != "" {
+			set[id] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for id := range set {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func pruneExpiredState(state *storage.State, now time.Time) bool {
@@ -520,7 +600,18 @@ func cloneBells(in map[string]bool) map[string]bool {
 func cloneBaseline(in map[string]storage.Observed) map[string]storage.Observed {
 	out := make(map[string]storage.Observed, len(in))
 	for k, v := range in {
+		v.ReviewRequestIDs = append([]string(nil), v.ReviewRequestIDs...)
+		if v.ClosedAt != nil {
+			t := *v.ClosedAt
+			v.ClosedAt = &t
+		}
 		out[k] = v
 	}
 	return out
+}
+
+func cloneState(in storage.State) storage.State {
+	in.Bells = cloneBells(in.Bells)
+	in.Baseline = cloneBaseline(in.Baseline)
+	return in
 }

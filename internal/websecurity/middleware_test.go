@@ -16,6 +16,10 @@ func TestCapabilityBoundary(t *testing.T) {
 	}{
 		{"binding", `{"object":0,"method":0,"args":{"args":["synthetic-secret"]}}`, "", 200},
 		{"cancel", `{"object":10,"method":0}`, "", 200},
+		{"events-emit", `{"object":3,"method":0}`, "", 403},
+		{"events-other-method", `{"object":3,"method":1}`, "", 403},
+		{"binding-other-method", `{"object":0,"method":1}`, "", 403},
+		{"cancel-other-method", `{"object":10,"method":1}`, "", 403},
 		{"browser", `{"object":9,"method":0}`, "", 403},
 		{"dialog", `{"object":5,"method":0}`, "", 403},
 		{"filesystem", `{"object":8,"method":0}`, "", 403},

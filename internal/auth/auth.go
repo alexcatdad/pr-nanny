@@ -226,7 +226,7 @@ func (v HTTPValidator) Validate(ctx context.Context, token string) (string, erro
 		return "", ErrUnavailable
 	}
 	if resp.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096)) // Best-effort drain after a failed request.
 		return "", ErrInvalidToken
 	}
 	var user struct {
@@ -266,7 +266,8 @@ func (g GHCLI) Token(ctx context.Context) (string, error) {
 	run := g.Run
 	if run == nil {
 		run = func(ctx context.Context, bin string, args ...string) ([]byte, error) {
-			cmd := exec.CommandContext(ctx, bin, args...)
+			// The renderer cannot choose the executable or arguments; the caller below is fixed.
+			cmd := exec.CommandContext(ctx, bin, "auth", "token", "--hostname", "github.com") // #nosec G204 -- backend-resolved gh executable with constant argv; no shell or renderer input.
 			var stdout limitedBuffer
 			stdout.limit = 4096
 			cmd.Stdout = &stdout
