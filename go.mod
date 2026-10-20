@@ -3,7 +3,7 @@ module github.com/alexcatdad/pr-nanny
 go 1.27.2
 
 require (
-	github.com/godbus/dbus/v5 v5.2.2
+	github.com/godbus/dbus/v5 v5.2.4
 	github.com/wailsapp/wails/v3 v3.0.0-beta.33
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/sys v0.48.0
