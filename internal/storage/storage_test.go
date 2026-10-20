@@ -154,14 +154,22 @@ func TestOpenRootRejectsSettingsSymlinkOutsideDataDirectory(t *testing.T) {
 	}
 	root := filepath.Join(t.TempDir(), "private")
 	outside := filepath.Join(t.TempDir(), "settings.json")
-	if err := os.Mkdir(root, 0o700); err != nil { t.Fatal(err) }
-	if err := os.WriteFile(outside, []byte(`{"version":1,"payload":{"Version":1,"AuthMethod":"gh","IntervalSeconds":60,"Layout":"all"}}`), 0o600); err != nil { t.Fatal(err) }
-	if err := os.Symlink(outside, filepath.Join(root, "settings.json")); err != nil { t.Fatal(err) }
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outside, []byte(`{"version":1,"payload":{"Version":1,"AuthMethod":"gh","IntervalSeconds":60,"Layout":"all"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "settings.json")); err != nil {
+		t.Fatal(err)
+	}
 	s := New(root)
 	if got, err := s.Settings(); err == nil {
 		t.Fatalf("outside symlink was read: %#v", got)
 	}
-	if err := s.SaveSettings(model.DefaultSettings()); err != nil { t.Fatalf("safe replacement failed: %v", err) }
+	if err := s.SaveSettings(model.DefaultSettings()); err != nil {
+		t.Fatalf("safe replacement failed: %v", err)
+	}
 	if contents, err := os.ReadFile(outside); err != nil || !strings.Contains(string(contents), `"AuthMethod":"gh"`) {
 		t.Fatalf("outside file was modified: %q, %v", contents, err)
 	}

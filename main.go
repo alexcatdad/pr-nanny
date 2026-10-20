@@ -14,6 +14,7 @@ import (
 
 	appcore "github.com/alexcatdad/pr-nanny/internal/app"
 	"github.com/alexcatdad/pr-nanny/internal/auth"
+	"github.com/alexcatdad/pr-nanny/internal/core"
 	ghapi "github.com/alexcatdad/pr-nanny/internal/github"
 	"github.com/alexcatdad/pr-nanny/internal/storage"
 	"github.com/alexcatdad/pr-nanny/internal/websecurity"
@@ -71,6 +72,27 @@ func main() {
 	}
 	if recovered {
 		controller.SetWarning("Invalid local data was preserved and reset. Review your Settings and PR bells.")
+	}
+	native.warning = controller.SetWarning
+	native.enabled = func(event core.Event) bool {
+		snapshot, _ := controller.GetSnapshot()
+		s := snapshot.Settings
+		if !s.Notifications {
+			return false
+		}
+		switch event {
+		case core.EventCI:
+			return s.Events.CI
+		case core.EventApproval:
+			return s.Events.Approval
+		case core.EventReviewRequested:
+			return s.Events.ReviewRequested
+		case core.EventMerged:
+			return s.Events.Merged
+		case core.EventClosed:
+			return s.Events.Closed
+		}
+		return false
 	}
 	service := &Service{controller: controller, native: native, smoke: smoke || preview, ready: make(chan struct{})}
 	var smokeReady atomic.Bool

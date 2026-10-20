@@ -8,6 +8,7 @@ import (
 
 	"github.com/alexcatdad/pr-nanny/internal/core"
 	"github.com/alexcatdad/pr-nanny/internal/model"
+	"github.com/alexcatdad/pr-nanny/internal/notify"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 )
@@ -17,7 +18,11 @@ type nativePlatform struct {
 	popup         *application.WebviewWindow
 	notifications *notifications.NotificationService
 	mu            sync.Mutex
-	ready         bool
+	dispatcher    *notify.Dispatcher
+	cancel        context.CancelFunc
+	warning       func(string)
+	enabled       func(core.Event) bool
+	authAttempted bool // accessed only by the single delivery worker
 	isolated      bool
 }
 
@@ -34,33 +39,72 @@ func (p *nativePlatform) OpenURL(url string) error { return p.app.Browser.OpenUR
 func (p *nativePlatform) HidePopup()               { p.popup.Hide() }
 func (p *nativePlatform) startNotifications(ctx context.Context, options application.ServiceOptions) {
 	err := p.notifications.ServiceStartup(ctx, options)
+	if err != nil {
+		p.warn("OS notifications are unavailable. Check your desktop notification service and permissions.")
+		return
+	}
+	ctx, cancel := context.WithCancel(ctx)
 	p.mu.Lock()
-	p.ready = err == nil
+	p.cancel = cancel
+	p.dispatcher = notify.New(ctx, p.deliver, func() {
+		p.warn("Some OS notifications could not be queued. Check notification permissions.")
+	})
 	p.mu.Unlock()
 }
 func (p *nativePlatform) Notify(pr model.PullRequest, event core.Event) {
 	p.mu.Lock()
-	ready := p.ready
+	dispatcher := p.dispatcher
 	p.mu.Unlock()
-	if !ready {
+	if dispatcher != nil {
+		dispatcher.Notify(pr, event)
+	}
+}
+func (p *nativePlatform) stopNotifications() {
+	p.mu.Lock()
+	if p.cancel != nil {
+		p.cancel()
+	}
+	p.dispatcher = nil
+	p.mu.Unlock()
+	_ = p.notifications.ServiceShutdown()
+}
+func (p *nativePlatform) warn(message string) {
+	if p.warning != nil {
+		p.warning(message)
+	}
+}
+func (p *nativePlatform) deliver(pr model.PullRequest, event core.Event) {
+	if p.enabled != nil && !p.enabled(event) {
 		return
 	}
 	allowed, err := p.notifications.CheckNotificationAuthorization()
 	if err != nil {
+		p.warn("OS notification permissions could not be checked. Review your operating system settings.")
 		return
 	}
 	if !allowed {
-		allowed, err = p.notifications.RequestNotificationAuthorization()
-		if err != nil || !allowed {
+		if p.authAttempted {
 			return
 		}
+		p.authAttempted = true
+		allowed, err = p.notifications.RequestNotificationAuthorization()
+		if err != nil || !allowed {
+			p.warn("OS notifications could not be enabled. Allow PR Nanny notifications in your operating system settings.")
+			return
+		}
+	}
+	// Settings can change while an operating-system permission prompt is open.
+	if p.enabled != nil && !p.enabled(event) {
+		return
 	}
 	title := map[core.Event]string{core.EventCI: "CI status changed", core.EventApproval: "Approval status changed", core.EventReviewRequested: "Review requested", core.EventMerged: "Pull request merged", core.EventClosed: "Pull request closed"}[event]
 	if title == "" {
 		return
 	}
 	id := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%s:%s:%t", pr.ID, event, pr.UpdatedAt.String(), pr.CI, pr.Approved)))
-	_ = p.notifications.SendNotification(notifications.NotificationOptions{
+	if err := p.notifications.SendNotification(notifications.NotificationOptions{
 		ID: fmt.Sprintf("%x", id[:16]), Title: title, Subtitle: fmt.Sprintf("%s #%d", pr.Repository, pr.Number), Body: pr.Title,
-	})
+	}); err != nil {
+		p.warn("An OS notification could not be delivered. Check your desktop notification service and permissions.")
+	}
 }

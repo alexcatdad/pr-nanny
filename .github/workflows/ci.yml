@@ -138,7 +138,8 @@ jobs:
           elif [ "$RUNNER_OS" = Windows ]; then
             powershell -NoProfile -Command '$p = Start-Process ./bin/pr-nanny.exe -ArgumentList "--smoke-test" -PassThru -Wait; exit $p.ExitCode'
           else
-            ./bin/pr-nanny --smoke-test
+            unzip -q dist/pr-nanny-0.1.0-rc.1-darwin-arm64.zip -d "$RUNNER_TEMP/pr-nanny-smoke"
+            "$RUNNER_TEMP/pr-nanny-smoke/PR Nanny.app/Contents/MacOS/pr-nanny" --smoke-test
           fi
       - name: Verify macOS or Linux release artifact
         if: runner.os != 'Windows'

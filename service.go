@@ -65,7 +65,7 @@ func (s *Service) ServiceStartup(ctx context.Context, options application.Servic
 func (s *Service) ServiceShutdown() error {
 	s.controller.Stop()
 	if !s.smoke {
-		_ = s.native.notifications.ServiceShutdown()
+		s.native.stopNotifications()
 	}
 	return nil
 }
