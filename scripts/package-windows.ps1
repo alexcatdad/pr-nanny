@@ -74,19 +74,19 @@ $Shortcut = $Shell.CreateShortcut((Join-Path $Folder 'PR Nanny.lnk'))
 $Shortcut.TargetPath = Join-Path $Here 'pr-nanny.exe'
 $Shortcut.WorkingDirectory = $Here
 $Shortcut.Save()
-Write-Host 'Installed the current-user Start Menu shortcut.'
+Write-Output 'Installed the current-user Start Menu shortcut.'
 '@ | Set-Content -Encoding utf8 (Join-Path $Payload 'install.ps1')
   @'
 $ErrorActionPreference = 'Stop'
 $Folder = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\PR Nanny'
 Remove-Item -LiteralPath $Folder -Recurse -Force -ErrorAction SilentlyContinue
-Write-Host 'Removed the current-user Start Menu shortcut. Settings and credentials were kept.'
+Write-Output 'Removed the current-user Start Menu shortcut. Settings and credentials were kept.'
 '@ | Set-Content -Encoding utf8 (Join-Path $Payload 'uninstall.ps1')
   $Archive = Join-Path $Dist "pr-nanny-$Version-windows-x64.zip"
   if (Test-Path $Archive) { Remove-Item -LiteralPath $Archive -Force }
   Compress-Archive -Path (Join-Path $Payload '*') -DestinationPath $Archive
   $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $Archive).Hash.ToLowerInvariant()
   Set-Content -Encoding ascii -NoNewline -Path "$Archive.sha256" -Value "$Hash  $(Split-Path -Leaf $Archive)`n"
-  Write-Host "Created $Archive"
+  Write-Output "Created $Archive"
 }
 finally { Remove-Item -LiteralPath $Stage -Recurse -Force -ErrorAction SilentlyContinue }
