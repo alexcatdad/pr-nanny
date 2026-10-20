@@ -159,8 +159,13 @@ onMount(() => {
       <div class="brand">
         <span class="brand-mark"
           ><svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 3.2 18 5.4v5.1c0 4.3-2.7 7.8-6 9.6-3.3-1.8-6-5.3-6-9.6V5.4l6-2.2Z" />
-            <path d="m9.3 11.8 1.8 1.8 3.8-4" />
+            <circle cx="6" cy="6.5" r="2.1" />
+            <circle cx="6" cy="17.5" r="2.1" />
+            <circle cx="14" cy="17.5" r="2.1" />
+            <path d="M6 8.6v6.8M6 13c0 3 3 4.5 6 4.5" />
+            <path
+              d="M16.5 2.5a3.2 3.2 0 0 0-3.2 3.2c0 2.2-1 2.6-1 3.3h8.4c0-.7-1-1.1-1-3.3a3.2 3.2 0 0 0-3.2-3.2ZM15.4 10.4h2.2"
+            />
           </svg></span
         >
         <div class="titles">
@@ -237,9 +242,14 @@ onMount(() => {
       {#if authRequired}
         <section class="empty-state">
           <div class="empty-icon">
-            <svg viewBox="0 0 40 40" aria-hidden="true">
-              <path d="M20 4.5 31 8.6V18c0 7.8-4.9 14.2-11 17.5C13.9 32.2 9 25.8 9 18V8.6l11-4.1Z" />
-              <path d="m15 20 3.3 3.3 6.7-7" />
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="6" cy="6.5" r="2.1" />
+              <circle cx="6" cy="17.5" r="2.1" />
+              <circle cx="14" cy="17.5" r="2.1" />
+              <path d="M6 8.6v6.8M6 13c0 3 3 4.5 6 4.5" />
+              <path
+                d="M16.5 2.5a3.2 3.2 0 0 0-3.2 3.2c0 2.2-1 2.6-1 3.3h8.4c0-.7-1-1.1-1-3.3a3.2 3.2 0 0 0-3.2-3.2ZM15.4 10.4h2.2"
+              />
             </svg>
           </div>
           <h1>
