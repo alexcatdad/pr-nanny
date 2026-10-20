@@ -108,7 +108,6 @@ func (m *Manager) ConnectCLI(ctx context.Context) (string, error) {
 		return "", ErrCLIUnavailable
 	}
 	login, err := m.validator.Validate(ctx, token)
-	token = ""
 	if err != nil {
 		return "", validationError(err)
 	}
@@ -148,7 +147,6 @@ func (m *Manager) Load(ctx context.Context, method, account string) (string, str
 	}
 	login, err := m.validator.Validate(ctx, token)
 	if err != nil || !validLogin(login) || !strings.EqualFold(login, account) {
-		token = ""
 		if err != nil {
 			return "", "", validationError(err)
 		}
@@ -187,7 +185,8 @@ func validLogin(login string) bool {
 		return false
 	}
 	for i, r := range login {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-') || i == 0 && r == '-' {
+		validCharacter := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-'
+		if !validCharacter || i == 0 && r == '-' {
 			return false
 		}
 	}
@@ -218,7 +217,7 @@ func (v HTTPValidator) Validate(ctx context.Context, token string) (string, erro
 	if err != nil {
 		return "", ErrUnavailable
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusForbidden && authIsRateLimit(resp) {
 		return "", authRateError(resp)
 	}

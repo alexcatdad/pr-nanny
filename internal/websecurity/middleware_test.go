@@ -65,7 +65,11 @@ func TestChunkedRequestsRejected(t *testing.T) {
 }
 func TestAssetsRetainSecurityHeaders(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("hello")) })).ServeHTTP(rec, httptest.NewRequest("GET", "/index.html", nil))
+	Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := w.Write([]byte("hello")); err != nil {
+			t.Errorf("write response: %v", err)
+		}
+	})).ServeHTTP(rec, httptest.NewRequest("GET", "/index.html", nil))
 	if rec.Code != 200 || rec.Header().Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatal("missing header")
 	}

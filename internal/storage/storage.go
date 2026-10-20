@@ -127,12 +127,12 @@ func (s *Store) read(name string, dst any) error {
 	if err != nil {
 		return err
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 	f, err := root.Open(name)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	b, err := io.ReadAll(io.LimitReader(f, maxFileBytes+1))
 	if err != nil {
 		return ErrCorrupt
@@ -183,7 +183,7 @@ func (s *Store) write(name string, value any) error {
 		return fmt.Errorf("write application data: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer func() { _ = os.Remove(tmpName) }()
 	if err = protectFile(tmp.Name()); err == nil {
 		_, err = tmp.Write(b)
 	}

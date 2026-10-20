@@ -101,7 +101,11 @@ func (c *Client) Fetch(ctx context.Context, token, account string, trackedIDs []
 		base = endpoint
 	}
 	u, err := url.Parse(base)
-	if err != nil || !(u.Scheme == "https" && u.Host == "api.github.com" || u.Scheme == "http" && isLoopbackHost(u.Hostname())) || u.User != nil {
+	if err != nil || u == nil {
+		return model.FetchResult{}, ErrInvalidInput
+	}
+	validEndpoint := u.Scheme == "https" && u.Host == "api.github.com" || u.Scheme == "http" && isLoopbackHost(u.Hostname())
+	if !validEndpoint || u.User != nil {
 		return model.FetchResult{}, ErrInvalidInput
 	}
 	prMap := make(map[string]model.PullRequest)
@@ -360,7 +364,7 @@ func (c *Client) request(ctx context.Context, token, query string, variables map
 	if err != nil {
 		return ErrUnavailable
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusForbidden && isRateLimitResponse(resp) {
 		return rateError(resp)
 	}
@@ -998,7 +1002,8 @@ func validSlug(s string) bool {
 		return false
 	}
 	for _, r := range s {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-') {
+		validCharacter := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-'
+		if !validCharacter {
 			return false
 		}
 	}
@@ -1014,7 +1019,8 @@ func validRepoComponent(s string) bool {
 		return false
 	}
 	for _, r := range s {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.') {
+		validCharacter := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.'
+		if !validCharacter {
 			return false
 		}
 	}

@@ -357,11 +357,6 @@ func (m *Monitor) transitions(pr model.PullRequest, prev, cur storage.Observed, 
 	return pending
 }
 
-func (m *Monitor) trackedIDs() []string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return trackedIDs(m.state.Baseline)
-}
 func (m *Monitor) setFailureLocked(err error) {
 	m.retryAt = time.Time{}
 	var classified ClassifiedError

@@ -1,0 +1,12 @@
+version: "2"
+
+linters:
+  default: standard
+  exclusions:
+    rules:
+      # These error values are shown directly in the UI, where sentence case
+      # and punctuation are intentional.
+      - path: internal/app/controller.go
+        linters:
+          - staticcheck
+        text: "ST1005"

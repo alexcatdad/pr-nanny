@@ -172,7 +172,9 @@ func TestGlobalNotificationsAndInaccessibleRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	settings.Notifications = false
-	m.SetSettings(settings)
+	if err := m.SetSettings(settings); err != nil {
+		t.Fatal(err)
+	}
 	changed := pr
 	changed.CI = model.CINotPassed
 	f.results = append(f.results, model.FetchResult{PullRequests: []model.PullRequest{changed}})
