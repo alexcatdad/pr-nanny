@@ -9,6 +9,7 @@ import type { PullRequest, Snapshot } from './lib/types';
 let snapshot = $state<Snapshot | null>(null);
 let settingsOpen = $state(new URLSearchParams(location.search).has('settings'));
 let activeTab = $state<'authored' | 'review' | 'recent'>('authored');
+let folded = $state<Record<string, boolean>>({});
 let error = $state('');
 let loading = $state(true);
 let busy = $state(false);
@@ -101,6 +102,15 @@ function fire(action: () => Promise<Snapshot>) {
 function updateBell(id: string, enabled: boolean) {
   fire(() => bridge.SetBell(id, enabled));
 }
+function moveFocus(event: KeyboardEvent) {
+  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+  const items = [...document.querySelectorAll<HTMLElement>('.list-area .pr-open, .list-area .section-heading button')];
+  const at = items.indexOf(document.activeElement as HTMLElement);
+  const next = items[at + (event.key === 'ArrowDown' ? 1 : -1)];
+  if (!next) return;
+  event.preventDefault();
+  next.focus();
+}
 function back() {
   settingsOpen = false;
   history.replaceState(null, '', location.pathname);
@@ -114,6 +124,8 @@ onMount(() => {
   const keydown = (event: KeyboardEvent) => {
     if (event.key === 'Escape') {
       void hide();
+    } else if ((event.target as Element | null)?.closest?.('.list-area')) {
+      moveFocus(event);
     }
   };
   const outside = (event: MouseEvent) => {
@@ -150,7 +162,34 @@ onMount(() => {
             <path d="M12 3.2 18 5.4v5.1c0 4.3-2.7 7.8-6 9.6-3.3-1.8-6-5.3-6-9.6V5.4l6-2.2Z" />
             <path d="m9.3 11.8 1.8 1.8 3.8-4" />
           </svg></span
-        ><strong>PR Nanny</strong>
+        >
+        <div class="titles">
+          <strong>PR Nanny</strong>
+          {#if snapshot}
+            <span class="connection-line" class:error-connection={snapshot.connection === 'error'}
+              ><span class="connection-dot" class:connected={snapshot.connection === 'connected'}></span
+              ><span
+                >{snapshot.connection === 'connected'
+                  ? `Connected${snapshot.settings.account ? ` as ${snapshot.settings.account}` : ''}`
+                  : ((
+                      {
+                        offline: 'Offline · showing saved pull requests',
+                        rate_limited: 'GitHub rate limit reached',
+                        error: 'Connection problem',
+                        auth_error: 'Authentication expired',
+                        authentication_error: 'Authentication expired',
+                      } as Record<string, string>
+                    )[snapshot.connection] ?? 'Not connected')}</span
+              ><span class="refresh-time"
+                >{snapshot.lastRefresh
+                  ? lastRefresh === 'now'
+                    ? 'Updated just now'
+                    : `Updated ${lastRefresh} ago`
+                  : ''}</span
+              ></span
+            >
+          {/if}
+        </div>
       </div>
       <div class="actions">
         <button
@@ -190,28 +229,6 @@ onMount(() => {
       </div>
     </header>
     {#if snapshot}
-      <div class="connection-bar" class:error-connection={snapshot.connection === 'error'}>
-        <span class="connection-dot" class:connected={snapshot.connection === 'connected'}></span
-        ><span
-          >{snapshot.connection === 'connected'
-            ? `Connected${snapshot.settings.account ? ` as ${snapshot.settings.account}` : ''}`
-            : ((
-                {
-                  offline: 'Offline · showing saved pull requests',
-                  rate_limited: 'GitHub rate limit reached',
-                  error: 'Connection problem',
-                  auth_error: 'Authentication expired',
-                  authentication_error: 'Authentication expired',
-                } as Record<string, string>
-              )[snapshot.connection] ?? 'Not connected')}</span
-        ><span class="refresh-time"
-          >{snapshot.lastRefresh
-            ? lastRefresh === 'now'
-              ? 'Updated just now'
-              : `Updated ${lastRefresh} ago`
-            : ''}</span
-        >
-      </div>
       {#if error}
         <div class="error-banner" role="alert">{error}</div>
       {:else if statusMessage && (snapshot.connection !== 'connected' || snapshot.message)}
@@ -248,6 +265,7 @@ onMount(() => {
           </button>
         </section>
       {:else}
+        <p class="sr-only" role="status">{prs.length} {prs.length === 1 ? 'pull request' : 'pull requests'}</p>
         <div class="layout-bar">
           <fieldset class="layout-toggle">
             <legend class="sr-only">Pull request layout</legend>
@@ -288,7 +306,7 @@ onMount(() => {
               </button>
             {/each}
           </nav>
-          <div class="list-area" aria-live="polite">
+          <div class="list-area">
             {#if categoryRows.length}
               <div class="pr-list">
                 {#each categoryRows as pr (pr.id)}
@@ -308,7 +326,7 @@ onMount(() => {
             {/if}
           </div>
         {:else}
-          <div class="list-area all-layout" aria-live="polite">
+          <div class="list-area all-layout">
             {#if prs.length === 0}
               <div class="list-empty">
                 <p>You’re all caught up.</p>
@@ -317,11 +335,20 @@ onMount(() => {
             {:else}
               {#each sections as section}
                 <section class="pr-section">
-                  <div class="section-heading">
-                    <h2>{section.title}</h2>
-                    <span>{section.items.length}</span>
-                  </div>
-                  {#if section.items.length}
+                  <h2 class="section-heading">
+                    <button
+                      type="button"
+                      aria-expanded={!folded[section.key]}
+                      onclick={() => (folded[section.key] = !folded[section.key])}
+                    >
+                      <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>{section.title}<span
+                        >{section.items.length}</span
+                      >
+                    </button>
+                  </h2>
+                  {#if folded[section.key]}
+                    <!-- collapsed -->
+                  {:else if section.items.length}
                     <div class="pr-list">
                       {#each section.items as pr (section.key + pr.id)}
                         <PrRow {pr} {busy} onBell={updateBell} onOpen={openPR} />

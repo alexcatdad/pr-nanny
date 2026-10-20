@@ -28,7 +28,7 @@ test('shows grouped PRs, renders untrusted text safely, and keeps long fields in
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect
     .poll(() => page.locator('.popup').evaluate((el) => getComputedStyle(el).backgroundColor))
-    .toBe('rgb(22, 27, 34)');
+    .toBe('rgb(18, 18, 18)');
   const darkWidths = await page.evaluate(() => {
     const popup = document.querySelector('.popup');
     if (!(popup instanceof HTMLElement)) throw new Error('Popup element is missing');
@@ -57,7 +57,7 @@ test('shows grouped PRs, renders untrusted text safely, and keeps long fields in
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect
     .poll(() => page.locator('.popup').evaluate((el) => getComputedStyle(el).backgroundColor))
-    .toBe('rgb(22, 27, 34)');
+    .toBe('rgb(18, 18, 18)');
   await page.locator('.popup').screenshot({ path: 'screenshots/popup-dark-tabs.png' });
   await page.emulateMedia({ colorScheme: 'light' });
   await page.getByRole('button', { name: /Review/ }).click();
