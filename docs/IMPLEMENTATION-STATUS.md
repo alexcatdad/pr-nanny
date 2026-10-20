@@ -17,21 +17,39 @@ Updated: 2026-10-20. Base: `4697f8b025a3cc86615a126d7983997c460e7ce4` (RC1).
 ## Baseline and measurement
 
 - [RC1 qualification run](https://github.com/alexcatdad/pr-nanny/actions/runs/39384882982): 07:11:15–07:16:11 UTC, 296 seconds wall time; macOS was the longest job at 288 seconds. Native gosec compilation cost 53–93 seconds.
-- CI now caches dependency-keyed pnpm stores and Go module/build dependencies and reuses one production frontend artifact. Optimized completed-run timing is still pending; no speedup is claimed yet.
+- CI caches dependency-keyed pnpm stores and Go module/build dependencies and reuses one production frontend artifact. [Successful quality run](https://github.com/alexcatdad/pr-nanny/actions/runs/39393580969) completed in 264 seconds (08:27:53–08:32:17 UTC), versus the 296-second RC1 main run. This PR run adds coverage/lint/CodeQL but omits main-only package attestations, so the 32-second difference is observational rather than a controlled benchmark. Windows was the longest native job at 225 seconds; macOS took 75 and Linux 62. Traced Go CodeQL took 146 seconds in parallel.
 - Local macOS package: 4,277,842 bytes before final source changes. Isolated bundled launch/frontend IPC probe: 1.07 seconds including its 500 ms verification delay; main-process maximum RSS 120,438,784 bytes. This excludes WebKit helper accounting and does not measure steady idle resources.
 
 ## Pending external qualification
 
-- Implementation PR and exact-head independent review evidence to be recorded after integration.
-- Windows/Linux native execution, Windows PE resource assertions, package install/uninstall probes, CodeQL uploads, and main-build attestations require completed GitHub Actions runs.
+- Quality PR #5 merged as `0b7e9fd` after all exact-head required checks and independent reviews passed. Site/community PR #6 now targets main with the squash-stack conflicts resolved by preserving reviewed site documentation.
+- All three native platforms, Windows PE assertions, archive install/uninstall probes and both CodeQL languages passed the quality PR run. Main-build attestations and publication still require the new main qualification run.
 - RC2 remains unpublished until all release gates pass for its exact commit. RC1 is unchanged.
 - Automatic upstream-to-tap dispatch requires `HOMEBREW_TAP_ACTIONS_TOKEN`, a fine-grained token scoped only to the existing tap with Actions: write. No credential was created. The tap update can be manually dispatched meanwhile.
 - No Developer ID/Authenticode signing credentials have been assumed available. Physical desktop acceptance, later-login behavior and a fully interactive Windows session remain separate from automated qualification.
 
 ## Next executable actions
 
-Publish the locally validated quality PR, record its checks and independent reviews, integrate the static site/community documentation separately, and validate completed native, release and Pages results. Use native auto-merge only after required checks and actionable review findings are resolved.
+Complete the focused Homebrew installation CI PR, integrate the static site/community documentation through native auto-merge, and validate exact-main release and Pages results. Dispatch the tap importer for RC2 only after publication succeeds.
 
 ## Integration CI
 
 [First quality run](https://github.com/alexcatdad/pr-nanny/actions/runs/39391536852) passed macOS and Linux native qualification, frontend, coverage, lint and security jobs. Windows resource generation exposed CRLF checkout handling; a reproducing local test now covers LF/CRLF input. CodeQL Go rejected the unsupported `none` build mode; its workflow now performs a traced production build with native dependencies and the shared frontend artifact. These fixes require a fresh exact-head run. The stale-poll browser regression now pauses the clock and was verified to reject removal of the save-generation guard.
+
+## Delivery checkpoint — 08:30 UTC
+
+- [Quality PR #5](https://github.com/alexcatdad/pr-nanny/pull/5) is ready for review with native auto-merge enabled; publication still depends on required checks. Head `5817b1d` replaces PowerShell host-only status output after the enforced analyzer reported warnings. Independent review found no blocker in that delta.
+- [Second quality run](https://github.com/alexcatdad/pr-nanny/actions/runs/39392719790) passed both CodeQL languages, all security/lint/coverage/frontend jobs, and macOS/Linux native qualification. Windows reached PowerShell analysis and failed on two output warnings; the subsequent corrective head requires fresh qualification. No failing gate was disabled.
+- Initial [Homebrew integration PR #6](https://github.com/alexcatdad/homebrew-tap/pull/6) merged as `8210d13`. Its manifests point to qualified RC1 artifacts. The tap's Actions setting permits the update workflow to create manifest PRs; workflow token defaults remain read-only. Additional real Homebrew install/uninstall CI is being prepared separately.
+- [Site/community PR #6](https://github.com/alexcatdad/pr-nanny/pull/6) is stacked on the quality branch. Astro static output, dependency audit and local asset/link validation pass. Rendered checks at 390, 661, 680, 699, 900 and 1440 pixels show no horizontal overflow; keyboard focus contrast is 4.97:1 light and 8.47:1 dark. Pages deployment requires integration into main.
+- Independent source security review of the integrated runtime/workflow/site changes found no actionable new vulnerability. Quality review verified the CRLF fixture, traced Go CodeQL build and deterministic stale-poll regression. Maintainer feedback on site copy, dark links, focus and tablet layout was addressed.
+
+Next: finish the Homebrew installation checks, integrate the site after quality gates permit, verify the exact-main RC2 publication and deployed Pages result, then record completed-run timing and artifacts. Missing cross-repository dispatch credentials remain an explicit setup prerequisite rather than an invented secret.
+
+## Delivery checkpoint — 08:35 UTC
+
+- Quality PR #5 merged as `0b7e9fd1bbf75f552f3f16b93e770a39a8c40335`. Its exact-head run passed all required checks on macOS ARM64, Windows x64 and Linux x64.
+- Site/community PR #6 targets main, includes the qualified main commit and has native auto-merge enabled. Its required checks own integration; no bypass is configured.
+- [Homebrew installation PR #7](https://github.com/alexcatdad/homebrew-tap/pull/7) merged as `b386e883` after all three exact-head checks passed, including real Homebrew cask installation/removal on macOS ARM64 and formula installation/test/removal on Ubuntu 24.04 x64. These do not claim GUI launch through Homebrew.
+- At the final actionable check, [main qualification run 39394175301](https://github.com/alexcatdad/pr-nanny/actions/runs/39394175301) was still running. RC2 was not yet published; exact-main attestations and publication remain external prerequisites. Pages deployment likewise awaits site integration. No session is kept active solely to wait for these workflows.
+- After a successful RC2 publication, dispatch the tap's `update-pr-nanny.yml` with `release_tag=v0.1.0-rc.2`, then review and merge its manifest PR after checks. Automatic cross-repository dispatch still needs the documented scoped token.

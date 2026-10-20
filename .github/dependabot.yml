@@ -24,3 +24,7 @@ updates:
     directory: /tools/windowsresources
     schedule:
       interval: weekly
+  - package-ecosystem: npm
+    directory: /site
+    schedule:
+      interval: weekly

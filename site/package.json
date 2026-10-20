@@ -1,0 +1,17 @@
+{
+  "name": "pr-nanny-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --host 127.0.0.1",
+    "build": "astro build",
+    "check:links": "node ./scripts/check-links.mjs"
+  },
+  "devDependencies": {
+    "astro": "7.4.0"
+  },
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "packageManager": "pnpm@11.25.0"
+}

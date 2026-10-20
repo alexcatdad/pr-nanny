@@ -29,7 +29,7 @@ WebKitGTK 6.0. Qualified GitHub Releases include `pr-nanny-cask.rb` and
 attestation and checksum before publishing them. Tap changes are reviewed
 separately in the existing `alexcatdad/homebrew-tap` repository.
 
-Once the PR Nanny entries are present in the tap, install with:
+PR Nanny is available in the existing tap. Install with:
 
 ```sh
 brew tap alexcatdad/tap
@@ -41,3 +41,17 @@ The cask does not remove macOS quarantine or bypass Gatekeeper. The Linux
 formula requires GTK4, WebKitGTK 6.0, a Secret Service provider and glibc 2.39+
 and does not make older distributions compatible with the Ubuntu 24.04 binary
 baseline.
+
+The existing tap has no native Windows installer mechanism. Homebrew's supported
+Windows environment is [WSL 2](https://docs.brew.sh/Homebrew-on-Linux), where this
+formula installs the Linux build. GUI use also requires WSLg or another desktop
+session and the Linux runtime/vault dependencies. Use the Windows ZIP for the
+native Windows application.
+
+After publication, the source workflow can dispatch the tap's verified release
+importer using `HOMEBREW_TAP_ACTIONS_TOKEN`, scoped only to that tap with Actions:
+write. That credential is not configured. Maintainers can manually run
+`update-pr-nanny.yml` in the tap with the qualified release tag; it verifies all
+three source-bound attestations and checksums and opens a reviewed update PR.
+Token-created PRs explicitly dispatch the tap checks. The narrowly pinned RC1
+bootstrap is documented in the tap and does not claim attestations for RC1.
