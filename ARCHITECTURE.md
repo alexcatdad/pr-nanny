@@ -41,6 +41,8 @@ Settings store account metadata, method, interval, layout, event preferences, gl
 
 Review-request false-to-true edges can notify without a bell; other changes need a bell. Overlapping category membership is deduplicated by GitHub PR node ID. The UI snapshot omits internal review-request IDs used by the Go monitor to recognize a newly recreated request. Notification baselines provide at-most-once attempts, not guaranteed delivery: an OS failure after the baseline write may drop a notification.
 
+A bounded single-worker dispatcher keeps native permission requests and delivery off the polling path. Pending events recheck current notification preferences before delivery. Permission denial prompts at most once per session; failures appear as safe warnings. A full queue drops excess events and reports a warning. Linux notification bodies escape XML markup so GitHub text cannot inject links or images into the desktop notification.
+
 ## Renderer and production boundary
 
 Wails embeds `frontend/dist`; production builds do not fetch application code from the network. `internal/websecurity.Middleware` sets a restrictive CSP and allows only the minimal Wails runtime binding operations needed by the app. The API is served through Wails' webview transport, not a separate application server.

@@ -69,7 +69,7 @@ cask "pr-nanny" do
   desc "Passive GitHub pull-request monitor"
   homepage "https://github.com/alexcatdad/pr-nanny"
   depends_on arch: :arm64
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
   app "PR Nanny.app"
 end
 EOF
