@@ -3,6 +3,7 @@ package notify
 
 import (
 	"context"
+	"runtime"
 
 	"github.com/alexcatdad/pr-nanny/internal/core"
 	"github.com/alexcatdad/pr-nanny/internal/model"
@@ -59,6 +60,12 @@ func (d *Dispatcher) Notify(pr model.PullRequest, event core.Event) {
 }
 
 func (d *Dispatcher) run(ctx context.Context) {
+	if runtime.GOOS == "windows" {
+		// WinRT initialization is per-thread; the pinned notification library
+		// initializes only on its first send. Keep every send on that thread.
+		// Exiting while locked lets Go terminate it instead of pooling it.
+		runtime.LockOSThread()
+	}
 	defer close(d.done)
 	for {
 		if ctx.Err() != nil {

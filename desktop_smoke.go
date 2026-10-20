@@ -19,6 +19,10 @@ func runDesktopSmoke(ctx context.Context, app *application.App, popup *applicati
 	if ctx == nil || app == nil || popup == nil || tray == nil || api == nil {
 		return errors.New("desktop smoke setup: required native service is unavailable")
 	}
+	if runtime.GOOS == "windows" {
+		// Match production delivery's fixed WinRT apartment thread.
+		runtime.LockOSThread()
+	}
 	configCleanup, err := isolateDesktopSmokeConfig()
 	if err != nil {
 		return desktopSmokeError("temporary config", err)
@@ -104,13 +108,15 @@ func runDesktopSmoke(ctx context.Context, app *application.App, popup *applicati
 	if err := ctx.Err(); err != nil {
 		return desktopSmokeError("context", err)
 	}
-	if err := api.SendNotification(notifications.NotificationOptions{
-		ID:       "pr-nanny-desktop-smoke",
-		Title:    "PR Nanny desktop smoke test",
-		Body:     "Synthetic notification from the isolated CI smoke test.",
-		Subtitle: "No GitHub data was used",
-	}); err != nil {
-		return desktopSmokeError("notification send", err)
+	for attempt := 1; attempt <= 2; attempt++ {
+		if err := api.SendNotification(notifications.NotificationOptions{
+			ID:       fmt.Sprintf("pr-nanny-desktop-smoke-%d", attempt),
+			Title:    "PR Nanny desktop smoke test",
+			Body:     "Synthetic notification from the isolated CI smoke test.",
+			Subtitle: "No GitHub data was used",
+		}); err != nil {
+			return desktopSmokeError("notification send", err)
+		}
 	}
 	return nil
 }

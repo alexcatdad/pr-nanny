@@ -138,7 +138,7 @@ jobs:
           if [ "$RUNNER_OS" = Linux ]; then
             xvfb-run -a dbus-run-session -- sh scripts/desktop-smoke-linux.sh ./bin/pr-nanny
           elif [ "$RUNNER_OS" = Windows ]; then
-            powershell -NoProfile -Command '$p = Start-Process ./bin/pr-nanny.exe -ArgumentList "--desktop-smoke-test" -PassThru -Wait; exit $p.ExitCode'
+            powershell -NoProfile -Command '$stdout = Join-Path $env:RUNNER_TEMP "pr-nanny-smoke.stdout"; $stderr = Join-Path $env:RUNNER_TEMP "pr-nanny-smoke.stderr"; $p = Start-Process ./bin/pr-nanny.exe -ArgumentList "--desktop-smoke-test" -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -Wait; Get-Content $stdout; Get-Content $stderr; exit $p.ExitCode'
           else
             unzip -q dist/pr-nanny-0.1.0-rc.1-darwin-arm64.zip -d "$RUNNER_TEMP/pr-nanny-smoke"
             "$RUNNER_TEMP/pr-nanny-smoke/PR Nanny.app/Contents/MacOS/pr-nanny" --smoke-test
