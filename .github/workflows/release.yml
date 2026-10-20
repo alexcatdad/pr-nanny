@@ -1,0 +1,82 @@
+name: Publish qualified prerelease
+on:
+  workflow_run:
+    workflows: [Validate]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      qualification_run_id:
+        description: Successful Validate push run on main with all five required jobs
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: release-0.1.0-rc.1
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Require complete qualification for the released source
+        id: qualification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFICATION_RUN_ID: ${{ github.event.workflow_run.id || inputs.qualification_run_id }}
+        run: |
+          sha=$(sh scripts/qualify-release.sh "$QUALIFICATION_RUN_ID")
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+          if gh release view v0.1.0-rc.1 >/dev/null 2>&1; then
+            printf 'publish=false\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'publish=true\n' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Use the qualified source for release metadata
+        if: steps.qualification.outputs.publish == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.qualification.outputs.sha }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: steps.qualification.outputs.publish == 'true'
+        with:
+          run-id: ${{ github.event.workflow_run.id || inputs.qualification_run_id }}
+          github-token: ${{ github.token }}
+          pattern: package-*
+          merge-multiple: true
+          path: dist
+      - name: Verify all three qualified packages and generate installation manifests
+        if: steps.qualification.outputs.publish == 'true'
+        env:
+          QUALIFIED_SHA: ${{ steps.qualification.outputs.sha }}
+        run: |
+          set -eu
+          cd dist
+          test -f pr-nanny-0.1.0-rc.1-darwin-arm64.zip
+          test -f pr-nanny-0.1.0-rc.1-windows-x64.zip
+          test -f pr-nanny-0.1.0-rc.1-linux-x64.tar.gz
+          sha256sum -c ./*.sha256
+          sha256sum ./*.zip ./*.tar.gz > SHA256SUMS
+          printf 'Source: https://github.com/alexcatdad/pr-nanny/commit/%s\n' "$QUALIFIED_SHA" > SOURCE.txt
+          mac_sha=$(sha256sum pr-nanny-0.1.0-rc.1-darwin-arm64.zip | cut -d ' ' -f1)
+          linux_sha=$(sha256sum pr-nanny-0.1.0-rc.1-linux-x64.tar.gz | cut -d ' ' -f1)
+          base=https://github.com/alexcatdad/pr-nanny/releases/download/v0.1.0-rc.1
+          sh ../scripts/homebrew.sh cask 0.1.0-rc.1 "$base/pr-nanny-0.1.0-rc.1-darwin-arm64.zip" "$mac_sha" > pr-nanny-cask.rb
+          sh ../scripts/homebrew.sh formula 0.1.0-rc.1 "$base/pr-nanny-0.1.0-rc.1-linux-x64.tar.gz" "$linux_sha" > pr-nanny-formula.rb
+      - name: Publish unsigned release candidate
+        if: steps.qualification.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFIED_SHA: ${{ steps.qualification.outputs.sha }}
+        run: |
+          gh release create v0.1.0-rc.1 dist/* \
+            --target "$QUALIFIED_SHA" --prerelease \
+            --title 'PR Nanny 0.1.0 RC1 — unsigned prerelease' \
+            --notes-file .github/release-notes.md

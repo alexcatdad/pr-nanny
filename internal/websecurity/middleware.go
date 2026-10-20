@@ -15,7 +15,7 @@ const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inl
 // window-navigation and system APIs. The app exposes only its bound service.
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", CSP)
+		w.Header().Set("Content-Security-Policy", contentPolicy())
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		if r.URL.Path == "/wails/runtime" {
@@ -23,7 +23,11 @@ func Middleware(next http.Handler) http.Handler {
 				http.Error(w, "Unsupported request", http.StatusBadRequest)
 				return
 			}
-			data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<10))
+			body := r.Body
+			if body == nil {
+				body = http.NoBody
+			}
+			data, err := io.ReadAll(http.MaxBytesReader(w, body, 16<<10))
 			if err != nil {
 				http.Error(w, "Request too large", http.StatusRequestEntityTooLarge)
 				return
@@ -55,5 +59,5 @@ func Middleware(next http.Handler) http.Handler {
 	})
 }
 func allowed(object, method int) bool {
-	return (object == 0 && method == 0) || object == 10 || object == 3
+	return (object == 0 || object == 10) && method == 0
 }
