@@ -1,0 +1,6 @@
+{
+  "version": "0.1.0-rc.6",
+  "macos": "darwin-arm64.zip",
+  "windows": "windows-x64.zip",
+  "installers": false
+}
