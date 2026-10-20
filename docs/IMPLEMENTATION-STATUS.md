@@ -23,7 +23,7 @@ Updated: 2026-10-20. Working branch: `codex/qualification-evidence`.
 ## Remaining acceptance and prerequisites
 
 - RC3 publication still requires complete exact-main validation and package attestations for `511dc3a`. After publication, import it through the existing tap workflow and merge only after manifest and installation checks pass. The currently verified tap release is RC2.
-- Actual OS sleep/resume, whole-system network disconnection and later-login execution were not forced on the active desktop. Deterministic recovery tests and login-item registration are separate evidence. Fedora KDE graphical availability is being checked through existing read-only host metadata; no VM or infrastructure is provisioned.
+- Actual OS sleep/resume, whole-system network disconnection and later-login execution were not forced on the active desktop. Deterministic recovery tests and login-item registration are separate evidence. The scoped Tailscale query timed out before returning a verified Lenovo/Fedora peer, and no matching SSH alias was configured; Fedora KDE access remains unverified. No remote connection, VM provisioning or infrastructure change was made.
 - Automatic cross-repository dispatch still requires `HOMEBREW_TAP_ACTIONS_TOKEN`, scoped to the tap with Actions: write. Manual dispatch works; no credential was created. Developer ID/Authenticode credentials remain unavailable, so provenance is distinct from signing/notarization.
 
 See [QUALITY.md](QUALITY.md) for measured coverage, request budgets, security boundaries and native qualification limits.
