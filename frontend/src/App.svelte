@@ -204,7 +204,13 @@ onMount(() => {
                   authentication_error: 'Authentication expired',
                 } as Record<string, string>
               )[snapshot.connection] ?? 'Not connected')}</span
-        ><span class="refresh-time">{snapshot.lastRefresh ? `Updated ${lastRefresh} ago` : ''}</span>
+        ><span class="refresh-time"
+          >{snapshot.lastRefresh
+            ? lastRefresh === 'now'
+              ? 'Updated just now'
+              : `Updated ${lastRefresh} ago`
+            : ''}</span
+        >
       </div>
       {#if error}
         <div class="error-banner" role="alert">{error}</div>

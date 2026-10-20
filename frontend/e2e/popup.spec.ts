@@ -113,6 +113,16 @@ test('settings display the version provided by the production build', async ({ p
   await expect(page.getByText(`PR Nanny ${appVersion}`)).toBeVisible();
 });
 
+test('shows a fresh refresh as just now and keeps elapsed age for older refreshes', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-20T05:00:00Z') });
+  await page.goto('/');
+
+  const refreshTime = page.locator('.refresh-time');
+  await expect(refreshTime).toHaveText('Updated just now');
+  await page.clock.runFor(60_000);
+  await expect(refreshTime).toHaveText('Updated 1m ago');
+});
+
 test('shows a setup action when auth is missing and keeps cached pull requests visible offline', async ({ page }) => {
   await page.goto('/?fixtureConnection=missing_auth');
   await expect(page.getByRole('heading', { name: 'Connect to GitHub' })).toBeVisible();
