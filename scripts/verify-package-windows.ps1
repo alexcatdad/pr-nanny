@@ -52,7 +52,7 @@ try {
   if ($VersionProcess.ExitCode -ne 0 -or -not (Get-Content -Raw -LiteralPath $VersionOutput).StartsWith("PR Nanny $Version (")) {
     throw 'Runtime version does not match VERSION.'
   }
-  Write-Host 'Windows package checks passed.'
+  Write-Output 'Windows package checks passed.'
 } finally {
   $Zip.Dispose()
   if (Test-Path -LiteralPath $Temp) { Remove-Item -LiteralPath $Temp -Recurse -Force }
