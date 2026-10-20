@@ -17,20 +17,20 @@ Updated: 2026-10-20. Base: `4697f8b025a3cc86615a126d7983997c460e7ce4` (RC1).
 ## Baseline and measurement
 
 - [RC1 qualification run](https://github.com/alexcatdad/pr-nanny/actions/runs/39384882982): 07:11:15–07:16:11 UTC, 296 seconds wall time; macOS was the longest job at 288 seconds. Native gosec compilation cost 53–93 seconds.
-- CI now caches dependency-keyed pnpm stores and Go module/build dependencies and reuses one production frontend artifact. Optimized completed-run timing is still pending; no speedup is claimed yet.
+- CI caches dependency-keyed pnpm stores and Go module/build dependencies and reuses one production frontend artifact. [Successful quality run](https://github.com/alexcatdad/pr-nanny/actions/runs/39393580969) completed in 264 seconds (08:27:53–08:32:17 UTC), versus the 296-second RC1 main run. This PR run adds coverage/lint/CodeQL but omits main-only package attestations, so the 32-second difference is observational rather than a controlled benchmark. Windows was the longest native job at 225 seconds; macOS took 75 and Linux 62. Traced Go CodeQL took 146 seconds in parallel.
 - Local macOS package: 4,277,842 bytes before final source changes. Isolated bundled launch/frontend IPC probe: 1.07 seconds including its 500 ms verification delay; main-process maximum RSS 120,438,784 bytes. This excludes WebKit helper accounting and does not measure steady idle resources.
 
 ## Pending external qualification
 
-- Implementation PR and exact-head independent review evidence to be recorded after integration.
-- Windows/Linux native execution, Windows PE resource assertions, package install/uninstall probes, CodeQL uploads, and main-build attestations require completed GitHub Actions runs.
+- Quality PR #5 merged as `0b7e9fd` after all exact-head required checks and independent reviews passed. Site/community PR #6 now targets main with the squash-stack conflicts resolved by preserving reviewed site documentation.
+- All three native platforms, Windows PE assertions, archive install/uninstall probes and both CodeQL languages passed the quality PR run. Main-build attestations and publication still require the new main qualification run.
 - RC2 remains unpublished until all release gates pass for its exact commit. RC1 is unchanged.
 - Automatic upstream-to-tap dispatch requires `HOMEBREW_TAP_ACTIONS_TOKEN`, a fine-grained token scoped only to the existing tap with Actions: write. No credential was created. The tap update can be manually dispatched meanwhile.
 - No Developer ID/Authenticode signing credentials have been assumed available. Physical desktop acceptance, later-login behavior and a fully interactive Windows session remain separate from automated qualification.
 
 ## Next executable actions
 
-Publish the locally validated quality PR, record its checks and independent reviews, integrate the static site/community documentation separately, and validate completed native, release and Pages results. Use native auto-merge only after required checks and actionable review findings are resolved.
+Complete the focused Homebrew installation CI PR, integrate the static site/community documentation through native auto-merge, and validate exact-main release and Pages results. Dispatch the tap importer for RC2 only after publication succeeds.
 
 ## Integration CI
 
