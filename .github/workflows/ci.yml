@@ -61,7 +61,7 @@ jobs:
       - run: npm install --global pnpm@11.25.0
       - name: Install Linux GUI and test-vault dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev libsecret-1-dev libxdo-dev xvfb dbus-x11 gnome-keyring apparmor
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev libsecret-1-dev libxdo-dev xvfb dbus-x11 gnome-keyring apparmor dunst
       - run: pnpm install --frozen-lockfile && pnpm build
         working-directory: frontend
       - name: Native adapter race tests
@@ -136,9 +136,9 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            xvfb-run -a dbus-run-session -- ./bin/pr-nanny --smoke-test
+            xvfb-run -a dbus-run-session -- sh scripts/desktop-smoke-linux.sh ./bin/pr-nanny
           elif [ "$RUNNER_OS" = Windows ]; then
-            powershell -NoProfile -Command '$p = Start-Process ./bin/pr-nanny.exe -ArgumentList "--smoke-test" -PassThru -Wait; exit $p.ExitCode'
+            powershell -NoProfile -Command '$p = Start-Process ./bin/pr-nanny.exe -ArgumentList "--desktop-smoke-test" -PassThru -Wait; exit $p.ExitCode'
           else
             unzip -q dist/pr-nanny-0.1.0-rc.1-darwin-arm64.zip -d "$RUNNER_TEMP/pr-nanny-smoke"
             "$RUNNER_TEMP/pr-nanny-smoke/PR Nanny.app/Contents/MacOS/pr-nanny" --smoke-test

@@ -65,6 +65,8 @@ The development-only `mcp` tag enables the Wails MCP interface and its exact con
 
 The validation workflow runs frontend checks, race-enabled Go tests, security checks, native production builds, Wails launch/IPC smoke tests, and package verification on macOS ARM64, Windows x64, and Ubuntu x64. A launch smoke test is not proof of physical tray interaction or of Windows desktop behavior on an untested host. Report only checks that actually completed successfully; do not treat a pending workflow or local cross-compile as a platform qualification.
 
+Windows and Linux CI also invoke `--desktop-smoke-test` on the actual application after embedded frontend readiness. The probe uses a unique synthetic app identity, checks native tray hide/show, verifies autostart registration and removal, and sends a native notification without requesting permissions. Linux invokes the exported StatusNotifierItem activation method over D-Bus and verifies delivery through Dunst. The flag refuses execution outside GitHub Actions and on macOS; macOS notification permission and bundled autostart behavior need separate desktop qualification. These probes do not simulate a physical panel click or a subsequent login.
+
 ## Scope
 
 Keep changes within PR Nanny's passive, read-only boundary. Do not add GitHub mutations, telemetry, subscription changes, extra accounts, a database, external services, or production fixture data. Keep secrets in Go and native credential storage. Keep API values rendered as text and validate URLs before opening them.

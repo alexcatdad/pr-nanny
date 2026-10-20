@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -34,7 +36,12 @@ var appIcon []byte
 var version = "0.1.0-dev"
 
 func main() {
-	smoke := len(os.Args) == 2 && os.Args[1] == "--smoke-test"
+	desktopSmoke := len(os.Args) == 2 && os.Args[1] == "--desktop-smoke-test"
+	if desktopSmoke && (os.Getenv("GITHUB_ACTIONS") != "true" || runtime.GOOS == "darwin") {
+		// This probe changes only a disposable runner's synthetic desktop identity.
+		os.Exit(2)
+	}
+	smoke := desktopSmoke || len(os.Args) == 2 && os.Args[1] == "--smoke-test"
 	preview := developmentPreview()
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -110,8 +117,12 @@ func main() {
 	if preview {
 		logger = previewLogger()
 	}
+	appName := "PR Nanny"
+	if desktopSmoke {
+		appName = fmt.Sprintf("PRNannySmoke%d", os.Getpid())
+	}
 	app := application.New(application.Options{
-		Name: "PR Nanny", Description: "A passive GitHub pull-request monitor", Icon: appIcon,
+		Name: appName, Description: "A passive GitHub pull-request monitor", Icon: appIcon,
 		Services: []application.Service{application.NewService(service)},
 		Logger:   logger,
 		Assets:   application.AssetOptions{Handler: application.AssetFileServerFS(assets), Middleware: websecurity.Middleware, DisableLogging: true},
@@ -154,6 +165,24 @@ func main() {
 		go func() {
 			select {
 			case <-service.ready:
+				if desktopSmoke {
+					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+					defer cancel()
+					result := make(chan error, 1)
+					go func() { result <- runDesktopSmoke(ctx, app, popup, tray, native.notifications) }()
+					select {
+					case err := <-result:
+						if err != nil {
+							fmt.Fprintln(os.Stderr, "Desktop smoke failed:", err)
+							app.Quit()
+							return
+						}
+					case <-ctx.Done():
+						fmt.Fprintln(os.Stderr, "Desktop smoke timed out")
+						app.Quit()
+						return
+					}
+				}
 				smokeReady.Store(true)
 				time.Sleep(500 * time.Millisecond)
 			case <-time.After(75 * time.Second):
