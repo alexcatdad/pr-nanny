@@ -48,10 +48,14 @@ formula installs the Linux build. GUI use also requires WSLg or another desktop
 session and the Linux runtime/vault dependencies. Use the Windows ZIP for the
 native Windows application.
 
-After publication, the source workflow can dispatch the tap's verified release
-importer using `HOMEBREW_TAP_ACTIONS_TOKEN`, scoped only to that tap with Actions:
-write. That credential is not configured. Maintainers can manually run
-`update-pr-nanny.yml` in the tap with the qualified release tag; it verifies all
-three source-bound attestations and checksums and opens a reviewed update PR.
-Token-created PRs explicitly dispatch the tap checks. The narrowly pinned RC1
-bootstrap is documented in the tap and does not claim attestations for RC1.
+After publishing a new release, the source workflow dispatches the tap's
+verified release importer with a short-lived GitHub App installation token.
+Configure the existing app's `APP_ID` variable and `APP_SECRET` private key
+secret in the `action-runners` environment. The token is limited to
+`alexcatdad/homebrew-tap` with Actions write access. If either value is missing,
+the release succeeds and the workflow reports that the tap update was skipped;
+maintainers can manually run `update-pr-nanny.yml` in the tap with the qualified
+release tag. The importer verifies all three source-bound attestations and
+checksums and opens a reviewed update PR. App-dispatched PRs explicitly run the
+tap checks. The narrowly pinned RC1 bootstrap is documented in the tap and does
+not claim attestations for RC1.
