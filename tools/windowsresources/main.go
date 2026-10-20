@@ -36,7 +36,12 @@ func generate(root, out string) error {
 	if err != nil {
 		return fmt.Errorf("read VERSION: %w", err)
 	}
-	appVersion := strings.TrimSuffix(string(versionBytes), "\n")
+	appVersion := string(versionBytes)
+	if strings.HasSuffix(appVersion, "\r\n") {
+		appVersion = strings.TrimSuffix(appVersion, "\r\n")
+	} else {
+		appVersion = strings.TrimSuffix(appVersion, "\n")
+	}
 	parts := semver.FindStringSubmatch(appVersion)
 	if parts == nil {
 		return fmt.Errorf("VERSION must contain exactly one valid SemVer value")

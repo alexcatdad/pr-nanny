@@ -31,3 +31,7 @@ Updated: 2026-10-20. Base: `4697f8b025a3cc86615a126d7983997c460e7ce4` (RC1).
 ## Next executable actions
 
 Publish the locally validated quality PR, record its checks and independent reviews, integrate the static site/community documentation separately, and validate completed native, release and Pages results. Use native auto-merge only after required checks and actionable review findings are resolved.
+
+## Integration CI
+
+[First quality run](https://github.com/alexcatdad/pr-nanny/actions/runs/39391536852) passed macOS and Linux native qualification, frontend, coverage, lint and security jobs. Windows resource generation exposed CRLF checkout handling; a reproducing local test now covers LF/CRLF input. CodeQL Go rejected the unsupported `none` build mode; its workflow now performs a traced production build with native dependencies and the shared frontend artifact. These fixes require a fresh exact-head run. The stale-poll browser regression now pauses the clock and was verified to reject removal of the save-generation guard.

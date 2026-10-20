@@ -94,6 +94,9 @@ jobs:
       - name: Install Linux GUI and test-vault dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev libsecret-1-dev libxdo-dev xvfb dbus-x11 gnome-keyring apparmor dunst
+      - name: Test Windows resource generation
+        if: runner.os == 'Windows'
+        run: go -C tools/windowsresources test ./...
       - name: Generate versioned Windows resources
         if: runner.os == 'Windows'
         run: go -C tools/windowsresources run . -root ../..
@@ -322,6 +325,7 @@ jobs:
           export PATH="$PWD/.tools:$PATH"
           sh scripts/lint.sh --backend
   codeql:
+    needs: assets
     name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -340,11 +344,22 @@ jobs:
         if: matrix.language == 'go'
         with:
           go-version-file: go.mod
+      - name: Install native Go extraction dependencies
+        if: matrix.language == 'go'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev libsecret-1-dev libxdo-dev
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: matrix.language == 'go'
+        with:
+          name: production-frontend
+          path: frontend/dist
       - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
         with:
           languages: ${{ matrix.language }}
-          build-mode: none
+          build-mode: ${{ matrix.language == 'go' && 'manual' || 'none' }}
           config-file: .github/codeql.yml
+      - name: Build the production Go application for extraction
+        if: matrix.language == 'go'
+        run: go build -tags production ./...
       - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
         with:
           category: /language:${{ matrix.language }}

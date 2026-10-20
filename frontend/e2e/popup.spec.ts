@@ -157,8 +157,11 @@ test('failed settings save stays actionable and prevents a second save while pen
 });
 
 test('an older poll cannot overwrite a newer saved layout', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
+  await page.clock.pauseAt(new Date('2026-01-01T00:01:00Z'));
   await page.goto('/?fixtureStalePoll=1');
   await expect(page.getByText('Connected as octocat')).toBeVisible();
+  await page.clock.runFor(1000);
   await expect
     .poll(() =>
       page.evaluate(
@@ -174,6 +177,7 @@ test('an older poll cannot overwrite a newer saved layout', async ({ page }) => 
     if (!release) throw new Error('The delayed stale poll is not pending.');
     release();
   });
+  await page.clock.runFor(20);
   await expect(page.getByRole('button', { name: 'Tabs' })).toHaveAttribute('aria-pressed', 'true');
 });
 
