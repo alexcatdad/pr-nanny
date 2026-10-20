@@ -12,6 +12,24 @@ Native builds require their actual target OS:
 - Windows x64: native C compiler and Microsoft Edge WebView2 Runtime.
 - Linux x64: GTK4, WebKitGTK 6 development packages, libsecret, an XDG desktop and Secret Service-compatible vault. Packages use Ubuntu 24.04/glibc 2.39 as their minimum binary baseline.
 
+On Fedora, install the native build dependencies with:
+
+```sh
+sudo dnf install gcc pkgconf-pkg-config gtk4-devel webkitgtk6.0-devel libsecret-devel
+```
+
+The running app also needs a tray-capable desktop and an unlocked Secret Service
+provider (for example KWallet with Secret Service enabled, or GNOME Keyring).
+The isolated desktop tests additionally use `xorg-x11-server-Xvfb`, `dbus-daemon`,
+`gnome-keyring`, and `dunst`. Do not run the CI-only desktop or vault probes on
+your normal session or credential store. Fedora builds are for local testing;
+build release archives on Ubuntu 24.04 to preserve the minimum binary baseline.
+
+With Wails beta.33, tray popup positioning requires X11. On Wayland desktops
+that provide XWayland, the app prefers the GTK X11 backend with a Wayland
+fallback. An explicit `GDK_BACKEND` setting is respected; forcing `wayland`
+or using a Wayland-only desktop leaves popup placement to the compositor.
+
 ## Local checks
 
 Run the complete local lint/format/type-check entrypoint from the root:
