@@ -64,6 +64,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev libsecret-1-dev libxdo-dev xvfb dbus-x11 gnome-keyring apparmor
       - run: pnpm install --frozen-lockfile && pnpm build
         working-directory: frontend
+      - name: Native adapter race tests
+        run: go test -race -tags production .
       - name: Go unit, integration and race tests
         run: go test -race ./internal/...
       - name: Native Windows credential vault roundtrip

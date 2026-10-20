@@ -22,3 +22,24 @@ package support. `scripts/homebrew.sh cask VERSION URL SHA256` and
 archive URLs and SHA-256 values. The Linux formula relies on the distribution's
 GTK4 and WebKitGTK 6.0 runtime libraries rather than Homebrew-provided GTK
 libraries. The generator does not publish a tap or provide placeholder hashes.
+
+Qualified GitHub Releases include `pr-nanny-cask.rb` and
+`pr-nanny-formula.rb` with actual release URLs and checksums. To install one
+through a local tap, download the appropriate file from the release, then:
+
+```sh
+brew tap-new --no-git local/pr-nanny
+tap_dir=$(brew --repository local/pr-nanny)
+# macOS ARM64:
+mkdir -p "$tap_dir/Casks"
+cp pr-nanny-cask.rb "$tap_dir/Casks/pr-nanny.rb"
+brew install --cask local/pr-nanny/pr-nanny
+# Linux x64 instead:
+mkdir -p "$tap_dir/Formula"
+cp pr-nanny-formula.rb "$tap_dir/Formula/pr-nanny.rb"
+brew install local/pr-nanny/pr-nanny
+```
+
+The cask does not remove macOS quarantine or bypass Gatekeeper. The Linux
+formula requires the system libraries listed above and does not make an old
+distribution compatible with the Ubuntu 24.04 binary baseline.

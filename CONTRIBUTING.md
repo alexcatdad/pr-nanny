@@ -41,6 +41,7 @@ To verify a production build on a native build host, build frontend assets first
 ```sh
 (cd frontend && pnpm install --frozen-lockfile && pnpm build)
 go build -tags production -trimpath -o bin/pr-nanny .
+go test -race -tags production .
 sh scripts/check-production.sh bin/pr-nanny
 ```
 

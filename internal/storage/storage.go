@@ -167,8 +167,7 @@ func (s *Store) write(name string, value any) error {
 	if err := os.MkdirAll(s.dir, 0o700); err != nil {
 		return fmt.Errorf("create private data directory: %w", err)
 	}
-	// Directories need owner execute permission for traversal; data files use 0600.
-	if err := os.Chmod(s.dir, 0o700); err != nil { // #nosec G302 -- 0700 is the private directory mode, not a file mode.
+	if err := protectDirectory(s.dir); err != nil {
 		return fmt.Errorf("protect private data directory: %w", err)
 	}
 	payload, err := json.Marshal(value)
@@ -185,7 +184,7 @@ func (s *Store) write(name string, value any) error {
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
-	if err = tmp.Chmod(0o600); err == nil {
+	if err = protectFile(tmp.Name()); err == nil {
 		_, err = tmp.Write(b)
 	}
 	if err == nil {
@@ -234,14 +233,14 @@ func validateSettings(s model.Settings) error {
 	if s.Layout != "all" && s.Layout != "tabs" {
 		return ErrCorrupt
 	}
-	if len(s.Account) > 256 || strings.ContainsAny(s.Account, "\r\n\x00") {
+	if len(s.Account) > 39 || strings.ContainsAny(s.Account, "\r\n\x00") {
 		return ErrCorrupt
 	}
 	return nil
 }
 
 func validateState(s State) error {
-	if len(s.Account) > 256 || strings.ContainsAny(s.Account, "\r\n\x00") || len(s.Bells) > maxTrackedPRs || len(s.Baseline) > maxTrackedPRs {
+	if len(s.Account) > 39 || strings.ContainsAny(s.Account, "\r\n\x00") || len(s.Bells) > maxTrackedPRs || len(s.Baseline) > maxTrackedPRs {
 		return ErrCorrupt
 	}
 	totalReviewRequestIDs := 0

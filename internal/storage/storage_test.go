@@ -36,7 +36,7 @@ func TestAtomicPrivateRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.Mode().Perm() != 0o600 {
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 			t.Errorf("%s permissions = %o", name, info.Mode().Perm())
 		}
 	}
@@ -84,6 +84,22 @@ func TestRejectsInvalidSettingsAndOversizedState(t *testing.T) {
 	}
 	if _, err := s.LoadState(); !errors.Is(err, ErrCorrupt) {
 		t.Fatalf("oversized state error=%v", err)
+	}
+}
+
+func TestAccountLengthMatchesGitHubLoginLimit(t *testing.T) {
+	s := New(t.TempDir())
+	settings := model.DefaultSettings()
+	settings.Account = strings.Repeat("a", 39)
+	if err := s.SaveSettings(settings); err != nil {
+		t.Fatalf("39-character account rejected: %v", err)
+	}
+	settings.Account += "a"
+	if err := s.SaveSettings(settings); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("40-character account error = %v", err)
+	}
+	if err := s.SaveState(State{Account: strings.Repeat("a", 40), Bells: map[string]bool{}, Baseline: map[string]Observed{}}); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("40-character state account error = %v", err)
 	}
 }
 

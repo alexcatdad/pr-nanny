@@ -55,4 +55,4 @@ All GitHub networking and credentials remain in Go. The renderer is served from 
 
 ## Release qualification
 
-Version `0.1.0-rc.1` artifacts are prepared for testing, not published. Cross-platform CI, signing, and macOS notarization are not complete. An actual Wails launch smoke test verifies the embedded UI can call its service; it is not proof of physical tray interactions on every supported desktop. Do not present a platform as fully qualified until its native CI job succeeds.
+Version `0.1.0-rc.1` may be published only from a successful complete validation push run on main. The release carries that source commit and SHA-256 checksums. Production signing and macOS notarization are not configured; the candidate is explicitly unsigned/ad-hoc signed. An actual Wails launch smoke test verifies the embedded UI can call its service; it is not proof of physical tray interactions on every supported desktop. Do not present a platform as fully qualified until its native CI job succeeds.

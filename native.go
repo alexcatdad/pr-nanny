@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"html"
+	"runtime"
 	"sync"
 
 	"github.com/alexcatdad/pr-nanny/internal/core"
@@ -16,14 +18,24 @@ import (
 type nativePlatform struct {
 	app           *application.App
 	popup         *application.WebviewWindow
-	notifications *notifications.NotificationService
+	notifications notificationAPI
 	mu            sync.Mutex
 	dispatcher    *notify.Dispatcher
 	cancel        context.CancelFunc
 	warning       func(string)
-	enabled       func(core.Event) bool
+	enabled       func(string, core.Event) bool
 	authAttempted bool // accessed only by the single delivery worker
 	isolated      bool
+}
+
+// notificationAPI keeps platform notification behavior replaceable in native
+// adapter tests while matching the Wails beta.33 service methods we use.
+type notificationAPI interface {
+	ServiceStartup(context.Context, application.ServiceOptions) error
+	ServiceShutdown() error
+	CheckNotificationAuthorization() (bool, error)
+	RequestNotificationAuthorization() (bool, error)
+	SendNotification(notifications.NotificationOptions) error
 }
 
 func (p *nativePlatform) SetAutostart(enabled bool) error {
@@ -74,7 +86,7 @@ func (p *nativePlatform) warn(message string) {
 	}
 }
 func (p *nativePlatform) deliver(pr model.PullRequest, event core.Event) {
-	if p.enabled != nil && !p.enabled(event) {
+	if p.enabled != nil && !p.enabled(pr.ID, event) {
 		return
 	}
 	allowed, err := p.notifications.CheckNotificationAuthorization()
@@ -94,7 +106,7 @@ func (p *nativePlatform) deliver(pr model.PullRequest, event core.Event) {
 		}
 	}
 	// Settings can change while an operating-system permission prompt is open.
-	if p.enabled != nil && !p.enabled(event) {
+	if p.enabled != nil && !p.enabled(pr.ID, event) {
 		return
 	}
 	title := map[core.Event]string{core.EventCI: "CI status changed", core.EventApproval: "Approval status changed", core.EventReviewRequested: "Review requested", core.EventMerged: "Pull request merged", core.EventClosed: "Pull request closed"}[event]
@@ -103,8 +115,17 @@ func (p *nativePlatform) deliver(pr model.PullRequest, event core.Event) {
 	}
 	id := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%s:%s:%t", pr.ID, event, pr.UpdatedAt.String(), pr.CI, pr.Approved)))
 	if err := p.notifications.SendNotification(notifications.NotificationOptions{
-		ID: fmt.Sprintf("%x", id[:16]), Title: title, Subtitle: fmt.Sprintf("%s #%d", pr.Repository, pr.Number), Body: pr.Title,
+		ID: fmt.Sprintf("%x", id[:16]), Title: title, Subtitle: notificationText(fmt.Sprintf("%s #%d", pr.Repository, pr.Number), runtime.GOOS), Body: notificationText(pr.Title, runtime.GOOS),
 	}); err != nil {
 		p.warn("An OS notification could not be delivered. Check your desktop notification service and permissions.")
 	}
+}
+
+func notificationText(value, platform string) string {
+	// Freedesktop notification bodies support XML markup, links and images.
+	// Wails forwards Linux body/subtitle strings directly to the D-Bus daemon.
+	if platform == "linux" {
+		return html.EscapeString(value)
+	}
+	return value
 }

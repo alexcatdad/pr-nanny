@@ -74,10 +74,20 @@ func main() {
 		controller.SetWarning("Invalid local data was preserved and reset. Review your Settings and PR bells.")
 	}
 	native.warning = controller.SetWarning
-	native.enabled = func(event core.Event) bool {
+	native.enabled = func(id string, event core.Event) bool {
 		snapshot, _ := controller.GetSnapshot()
 		s := snapshot.Settings
 		if !s.Notifications {
+			return false
+		}
+		known := false
+		for _, pr := range snapshot.PullRequests {
+			if pr.ID == id {
+				known = event == core.EventReviewRequested || pr.Bell
+				break
+			}
+		}
+		if !known {
 			return false
 		}
 		switch event {

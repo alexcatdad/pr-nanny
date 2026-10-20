@@ -2,7 +2,7 @@
 
 PR Nanny is a passive GitHub.com pull-request monitor that lives in the system tray. It reads open pull requests authored by you or requesting your individual or team review, shows their approval and CI summaries, and can send local notifications. It never writes to GitHub or changes subscriptions.
 
-> **0.1.0-rc.1 is a prerelease under qualification.** Release archives are prepared for testing but have not been published as a GitHub Release or Homebrew tap. Cross-platform CI qualification is still pending; the initial foundation validation failed and does not establish platform support. Artifacts are unsigned except for ad-hoc macOS bundle signing, and macOS notarization is unavailable.
+> **0.1.0-rc.1 is a release candidate.** The release workflow publishes only after all native, frontend and security gates pass on the exact source commit. See [Releases](https://github.com/alexcatdad/pr-nanny/releases) for available downloads and [Actions](https://github.com/alexcatdad/pr-nanny/actions/workflows/ci.yml) for qualification results. Artifacts are unsigned except for ad-hoc macOS bundle signing; Developer ID signing and notarization are not configured.
 
 ## Screenshots
 
@@ -36,7 +36,7 @@ Archives for `0.1.0-rc.1` are named:
 - `pr-nanny-0.1.0-rc.1-windows-x64.zip` — Windows 10/11 x64 with Microsoft Edge WebView2 Runtime.
 - `pr-nanny-0.1.0-rc.1-linux-x64.tar.gz` — Linux x64 with glibc 2.39 or newer, GTK4, WebKitGTK 6, and a Secret Service-compatible credential store such as GNOME Keyring or KWallet with Secret Service enabled. Ubuntu 24.04 and current Fedora releases are the target environments.
 
-The artifacts have not been published as release downloads. For now, retrieve the corresponding `package-*` artifact from the CI workflow when that platform's job succeeds. Verify its adjacent `.sha256` file before installing. There is no stable release URL yet.
+Download qualified archives from [Releases](https://github.com/alexcatdad/pr-nanny/releases). Before a release qualifies, each successful native CI job provides a `package-*` workflow artifact for testing. Verify the adjacent `.sha256` file or release `SHA256SUMS` before installing. A successful individual platform job does not establish qualification of the other platforms.
 
 On macOS, unzip the archive and move `PR Nanny.app` to Applications. The app is ad-hoc signed for bundle integrity, not Developer ID signed or notarized; macOS may require explicit approval to open it.
 
@@ -44,7 +44,7 @@ On Windows, unzip and run `install.ps1` to add a current-user Start Menu shortcu
 
 On Linux, extract the archive, run `./install.sh` from its extracted directory, and ensure `~/.local/bin` is on `PATH`. The installer adds the app and desktop entry for the current user. Run `./uninstall.sh` in the same directory to remove those application files.
 
-Install scripts do not remove settings or credentials. Homebrew supports macOS and Linux (including WSL); it does not install a native Windows build. No Homebrew tap is published. After real HTTPS release URLs and SHA-256 values exist, `scripts/homebrew.sh` can generate cask and formula templates; it does not publish a tap or invent release values. See [Homebrew installation notes](build/README.md).
+Install scripts do not remove settings or credentials. Homebrew supports macOS and Linux (including WSL); it does not install a native Windows build. Qualified releases include cask and formula files for a local tap; no public tap is published. See [Homebrew installation notes](build/README.md).
 
 ## Authentication and permissions
 
