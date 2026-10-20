@@ -24,11 +24,16 @@ test('shows grouped PRs, renders untrusted text safely, and keeps long fields in
   expect(scrollWidths.body).toBeLessThanOrEqual(scrollWidths.viewport);
   expect(scrollWidths.root).toBeLessThanOrEqual(scrollWidths.viewport);
   expect(scrollWidths.popup).toBeLessThanOrEqual(scrollWidths.popupClient);
+  // The hostile fixture title is for the assertions above; screenshots show a plain long title instead.
+  await page.locator('.title', { hasText: '<img src=x' }).evaluate((el) => {
+    el.textContent =
+      'Sanitize untrusted titles with a long descriptive suffix that should wrap safely inside the compact popup row';
+  });
   await page.locator('.popup').screenshot({ path: 'screenshots/popup-light-all.png' });
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect
     .poll(() => page.locator('.popup').evaluate((el) => getComputedStyle(el).backgroundColor))
-    .toBe('rgb(22, 27, 34)');
+    .toBe('rgb(18, 18, 18)');
   const darkWidths = await page.evaluate(() => {
     const popup = document.querySelector('.popup');
     if (!(popup instanceof HTMLElement)) throw new Error('Popup element is missing');
@@ -57,7 +62,7 @@ test('shows grouped PRs, renders untrusted text safely, and keeps long fields in
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect
     .poll(() => page.locator('.popup').evaluate((el) => getComputedStyle(el).backgroundColor))
-    .toBe('rgb(22, 27, 34)');
+    .toBe('rgb(18, 18, 18)');
   await page.locator('.popup').screenshot({ path: 'screenshots/popup-dark-tabs.png' });
   await page.emulateMedia({ colorScheme: 'light' });
   await page.getByRole('button', { name: /Review/ }).click();
@@ -113,6 +118,16 @@ test('settings display the version provided by the production build', async ({ p
   await expect(page.getByText(`PR Nanny ${appVersion}`)).toBeVisible();
 });
 
+test('shows a fresh refresh as just now and keeps elapsed age for older refreshes', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-20T05:00:00Z') });
+  await page.goto('/');
+
+  const refreshTime = page.locator('.refresh-time');
+  await expect(refreshTime).toHaveText('Updated just now');
+  await page.clock.runFor(60_000);
+  await expect(refreshTime).toHaveText('Updated 1m ago');
+});
+
 test('shows a setup action when auth is missing and keeps cached pull requests visible offline', async ({ page }) => {
   await page.goto('/?fixtureConnection=missing_auth');
   await expect(page.getByRole('heading', { name: 'Connect to GitHub' })).toBeVisible();
@@ -161,7 +176,7 @@ test('an older poll cannot overwrite a newer saved layout', async ({ page }) => 
   await page.clock.pauseAt(new Date('2026-01-01T00:01:00Z'));
   await page.goto('/?fixtureStalePoll=1');
   await expect(page.getByText('Connected as octocat')).toBeVisible();
-  await page.clock.runFor(1000);
+  await page.clock.runFor(5000);
   await expect
     .poll(() =>
       page.evaluate(

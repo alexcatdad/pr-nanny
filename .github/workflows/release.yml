@@ -26,6 +26,9 @@ jobs:
       contents: write
       actions: read
       attestations: read
+    outputs:
+      release_published: ${{ steps.release_version.outputs.publish }}
+      release_tag: ${{ steps.release_version.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -141,15 +144,57 @@ jobs:
           gh release create "$RELEASE_TAG" dist/* \
             --target "$QUALIFIED_SHA" "${release_flags[@]}" \
             --title "$title" --notes-file dist/CHANGELOG.md
-      - name: Request an update in the existing Homebrew tap
-        if: steps.release_version.outputs.publish == 'true'
+
+  request_homebrew_update:
+    needs: publish
+    if: needs.publish.outputs.release_published == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: action-runners
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check GitHub App configuration
+        id: app_config
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_ACTIONS_TOKEN }}
-          RELEASE_TAG: ${{ steps.release_version.outputs.tag }}
+          APP_ID: ${{ vars.APP_ID }}
+          APP_SECRET: ${{ secrets.APP_SECRET }}
         run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo '::notice::Homebrew update requires HOMEBREW_TAP_ACTIONS_TOKEN (Actions: write on alexcatdad/homebrew-tap).'
-            echo 'Homebrew update was not dispatched: configure the scoped token or run the tap update workflow manually.' >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+          if [ -n "$APP_ID" ] && [ -n "$APP_SECRET" ]; then
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::Homebrew update was not dispatched because the action-runners environment is missing APP_ID or APP_SECRET.'
+            echo 'Homebrew update was not dispatched; configure the existing GitHub App credentials in the action-runners environment or run the tap update workflow manually.' >> "$GITHUB_STEP_SUMMARY"
           fi
-          gh workflow run update-pr-nanny.yml --repo alexcatdad/homebrew-tap -f release_tag="$RELEASE_TAG"
+      - name: Validate GitHub App private key structure
+        if: steps.app_config.outputs.configured == 'true'
+        env:
+          APP_SECRET: ${{ secrets.APP_SECRET }}
+        run: |
+          # Structural check only; the key is piped to openssl and never printed.
+          set +x
+          if ! printf '%s' "$APP_SECRET" | grep -q -- '-----BEGIN [A-Z ]*PRIVATE KEY-----'; then
+            echo '::error::APP_SECRET is not a PEM private key (no BEGIN PRIVATE KEY header). A GitHub App client secret or numeric ID cannot sign app JWTs; store the .pem downloaded from the App settings.'
+            exit 1
+          fi
+          if ! printf '%s' "$APP_SECRET" | openssl pkey -noout >/dev/null 2>&1; then
+            echo '::error::APP_SECRET has a PEM header but does not parse as a private key (truncated, re-wrapped, or escaped newlines). Re-paste the full .pem file, including the BEGIN and END lines, as a multi-line secret.'
+            exit 1
+          fi
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        if: steps.app_config.outputs.configured == 'true'
+        id: tap_token
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_SECRET }}
+          owner: alexcatdad
+          repositories: homebrew-tap
+          permission-actions: write
+      - name: Dispatch verified tap importer for the published release
+        if: steps.app_config.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ steps.tap_token.outputs.token }}
+          RELEASE_TAG: ${{ needs.publish.outputs.release_tag }}
+        run: gh workflow run update-pr-nanny.yml --repo alexcatdad/homebrew-tap -f release_tag="$RELEASE_TAG"

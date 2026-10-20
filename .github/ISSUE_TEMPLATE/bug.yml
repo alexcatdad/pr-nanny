@@ -1,0 +1,33 @@
+name: Bug report
+description: Report a reproducible application problem.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include tokens, private repository names, or account screenshots. Report vulnerabilities privately using SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Version and installation method
+      placeholder: Release tag, archive or Homebrew
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system and architecture
+      placeholder: macOS ARM64, Windows x64, or Linux x64 (include desktop environment)
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include expected and actual behavior using synthetic examples.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Screenshots and errors are optional. Remove credentials and private metadata.

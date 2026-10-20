@@ -39,4 +39,5 @@ export type Snapshot = {
   message: string;
   lastRefresh?: string | null;
   refreshing: boolean;
+  degraded?: boolean;
 };

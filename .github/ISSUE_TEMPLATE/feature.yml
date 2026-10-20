@@ -1,0 +1,18 @@
+name: Feature request
+description: Suggest an improvement within the passive GitHub.com monitor scope.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or workflow
+      description: Explain the user need without private repository or account information.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed improvement
+      description: Keep the single-account, read-only, no-telemetry boundaries in mind.
+    validations:
+      required: true
