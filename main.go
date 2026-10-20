@@ -81,6 +81,7 @@ func main() {
 		}
 		defer os.RemoveAll(dataDir)
 	}
+	configureTrayDisplay()
 	native := &nativePlatform{notifications: notifications.New(), isolated: smoke || preview}
 	store := storage.New(dataDir)
 	// Preserve corrupted non-secret data and restart with a fresh baseline.
@@ -172,12 +173,36 @@ func main() {
 	popup.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) { popup.Hide(); e.Cancel() })
 	tray := app.SystemTray.New()
 	tray.SetTooltip("PR Nanny")
+	if runtime.GOOS == "linux" {
+		// Wails beta.33 derives the StatusNotifierItem name and tooltip from
+		// its label; SetTooltip is not implemented by the Linux backend.
+		tray.SetLabel("PR Nanny")
+	}
 	if runtime.GOOS == "darwin" {
 		tray.SetTemplateIcon(trayIcon)
 	} else {
 		tray.SetIcon(appIcon)
 	}
 	tray.AttachWindow(popup).WindowOffset(5)
+	if runtime.GOOS == "linux" {
+		// The first tray activation positions the window before GTK maps it.
+		// KWin can replace that initial position, so apply it again on focus.
+		popup.OnWindowEvent(events.Common.WindowFocus, func(*application.WindowEvent) {
+			_ = tray.PositionWindow(popup, 5)
+		})
+		// WebKitGTK's media preference can disagree with KDE's portal setting.
+		// Keep system colors and light-dark() in sync with the native preference,
+		// including after Settings navigation reloads the document.
+		syncAppearance := func() {
+			scheme := "light"
+			if app.Env.IsDarkMode() {
+				scheme = "dark"
+			}
+			popup.ExecJS(fmt.Sprintf("document.documentElement.style.colorScheme = %q", scheme))
+		}
+		popup.OnWindowEvent(events.Common.WindowShow, func(*application.WindowEvent) { syncAppearance() })
+		app.Event.OnApplicationEvent(events.Linux.SystemThemeChanged, func(*application.ApplicationEvent) { syncAppearance() })
+	}
 	if smoke || preview {
 		app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) { popup.Show(); popup.Focus() })
 	}

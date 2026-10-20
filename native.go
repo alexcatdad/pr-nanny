@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"html"
+	"os"
 	"runtime"
 	"sync"
 
@@ -14,6 +15,16 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 )
+
+// Wails beta.33 can position tray windows only through X11. Prefer XWayland
+// on mixed sessions, without overriding an explicit backend or requiring X11
+// on a desktop that only provides Wayland.
+func configureTrayDisplay() {
+	if runtime.GOOS == "linux" && os.Getenv("GDK_BACKEND") == "" &&
+		os.Getenv("DISPLAY") != "" && os.Getenv("WAYLAND_DISPLAY") != "" {
+		_ = os.Setenv("GDK_BACKEND", "x11,wayland")
+	}
+}
 
 type nativePlatform struct {
 	app           *application.App

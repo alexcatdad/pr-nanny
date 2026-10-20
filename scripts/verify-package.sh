@@ -23,7 +23,14 @@ for checksum in "$DIST"/*.sha256; do
   [ -f "$checksum" ] || continue
   archive=${checksum%.sha256}
   [ -f "$archive" ] || { echo "missing archive for $checksum" >&2; exit 1; }
-  (cd "$DIST" && shasum -a 256 -c "$(basename "$checksum")")
+  (
+    cd "$DIST"
+    if command -v sha256sum >/dev/null 2>&1; then
+      sha256sum -c "$(basename "$checksum")"
+    else
+      shasum -a 256 -c "$(basename "$checksum")"
+    fi
+  )
   name=$(basename "$archive")
   listing=""
   case "$name" in
