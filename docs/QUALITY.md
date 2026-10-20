@@ -51,6 +51,18 @@ A successful fetch searches authored PRs, direct user review requests, and each 
 
 The polling loop regression verifies interval-change wakeup and cancellation. The deterministic soak covers application-level outage recovery and bounded persisted identities; it does not measure goroutine growth, OS sleep/resume, idle CPU or whole-process-tree memory. Those remain separate native acceptance measurements.
 
+### Request cost after the team-search change
+
+Team review searches now return PR node IDs only and details come from one batched `nodes(ids:)` lookup shared with tracked IDs. Estimated GraphQL points per warm-cache cycle (node-limit formula, not measured `rateLimit` cost): 0 teams 7, 5 teams 22 to 12, 25 teams 82 to 35, 50 teams 157 to 63. At 60 s polling that is 9,420 to 3,780 points/hour at 50 teams against the 5,000/hour budget. Request counts and simulated latency are unchanged; complete discovery and result IDs are asserted against ground truth. Method, caveats and the options not taken (OR-grouped and parallel searches) are in [API-COST.md](API-COST.md).
+
+## Restricted organization permissions
+
+A denied team lookup (HTTP 403, `FORBIDDEN`, `INSUFFICIENT_SCOPES`, `SAML_ENFORCEMENT`) now degrades only team review discovery through a narrow `ErrPermission`; 401 and `UNAUTHORIZED` still fail as authentication, and the token's account is re-verified when the organization list is denied. The UI shows a fixed warning with no organization or team names. Previously seen team requests are carried forward while degraded, so loss and recovery raise no removed or new-request notifications. Synthetic scenarios cover full permissions, no membership, forbidden team listing, restricted token, revocation mid-session, restoration, stale cache (1 hour bounded grace), partial GraphQL errors and unaffected authored/direct-review PRs. An independent review found no blocking issue; the accepted residual risk is that a user who left a team may still see its requests for up to an hour while discovery stays denied.
+
+## Frontend bridge traffic
+
+The popup previously called `GetSnapshot()` every second (3,601 calls/hour measured with a counting mock bridge under fake timers). It now ticks the relative-time clock locally and syncs every 5 s only while visible, immediately on becoming visible or focused: 721 calls/hour visible, 1 hidden. Ten deterministic tests cover clock-without-IPC, hidden silence, prompt updates, reopen refresh, stale-response guards and cleanup. Whether each platform's webview fires `visibilitychange` on popup hide/show is not yet confirmed on real builds; the focus listener is the fallback.
+
 ## Homebrew installation
 
 [Tap PR #7](https://github.com/alexcatdad/homebrew-tap/pull/7) passed all exact-head checks before merge, including real macOS ARM64 cask install/uninstall under a temporary Applications directory and Ubuntu 24.04 x64 formula install/test/uninstall. Homebrew verified the qualified RC1 archive checksums selected by the manifests. These checks establish package deployment/removal through the existing tap, separately from the native application launch and credential-store tests above.
