@@ -14,6 +14,7 @@ let {
   busy?: boolean;
 } = $props();
 let states = $derived(statusLabel(pr));
+let slash = $derived(pr.repository.indexOf('/'));
 const stop = (event: MouseEvent) => event.stopPropagation();
 </script>
 
@@ -26,8 +27,13 @@ const stop = (event: MouseEvent) => event.stopPropagation();
   ></button>
   <div class="pr-main">
     <div class="pr-heading">
-      <span class="repo">{pr.repository}</span><span class="number">#{pr.number}</span
-      ><span class="age" title={pr.createdAt}>{relativeAge(pr.createdAt)}</span>
+      <span class="repo" title={pr.repository}
+        >{#if slash > 0}
+          {pr.repository.slice(0, slash + 1)}<b>{pr.repository.slice(slash + 1)}</b>
+        {:else}
+          {pr.repository}
+        {/if}</span
+      ><span class="number">#{pr.number}</span><span class="age" title={pr.createdAt}>{relativeAge(pr.createdAt)}</span>
     </div>
     <div class="title" title={pr.title}>{pr.title}</div>
     <div class="status-line">

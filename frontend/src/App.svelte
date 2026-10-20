@@ -9,14 +9,23 @@ import type { PullRequest, Snapshot } from './lib/types';
 let snapshot = $state<Snapshot | null>(null);
 let settingsOpen = $state(new URLSearchParams(location.search).has('settings'));
 let activeTab = $state<'authored' | 'review' | 'recent'>('authored');
+let folded = $state<Record<string, boolean>>({});
 let error = $state('');
 let loading = $state(true);
 let busy = $state(false);
 let now = $state(Date.now());
-let timer: ReturnType<typeof setInterval> | undefined;
+// Relative-time clock: local only, never calls the bridge.
+const CLOCK_MS = 1000;
+// Snapshot sync: bounded poll while the popup is visible, none while hidden.
+const SYNC_MS = 5000;
+let clockTimer: ReturnType<typeof setInterval> | undefined;
+let syncTimer: ReturnType<typeof setInterval> | undefined;
 let alive = true;
 let stateVersion = 0;
 let snapshotRequest = 0;
+let syncInFlight = false;
+let lastSerialized = '';
+const visible = () => document.visibilityState !== 'hidden';
 const prs = $derived(
   [...(snapshot?.pullRequests ?? [])].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
 );
@@ -47,21 +56,58 @@ const statusMessage = $derived(
     '',
 );
 
+// Skips the assignment when nothing changed so unchanged polls cause no rerender.
+function apply(next: Snapshot) {
+  const serialized = JSON.stringify(next);
+  if (serialized === lastSerialized) return;
+  lastSerialized = serialized;
+  snapshot = next;
+}
 async function sync() {
   const request = ++snapshotRequest;
   const version = stateVersion;
+  syncInFlight = true;
   try {
     const next = await bridge.GetSnapshot();
     if (alive && !busy && request === snapshotRequest && version === stateVersion) {
-      snapshot = next;
+      apply(next);
       error = '';
     }
   } catch {
     if (alive && !busy && request === snapshotRequest && version === stateVersion)
       error = 'Could not reach PR Nanny. Try refreshing.';
   } finally {
-    if (alive && request === snapshotRequest) loading = false;
+    if (alive && request === snapshotRequest) {
+      loading = false;
+      syncInFlight = false;
+    }
   }
+}
+function tickClock() {
+  now = Date.now();
+}
+function stopTimers() {
+  if (clockTimer) clearInterval(clockTimer);
+  if (syncTimer) clearInterval(syncTimer);
+  clockTimer = syncTimer = undefined;
+}
+function startTimers() {
+  stopTimers();
+  clockTimer = setInterval(tickClock, CLOCK_MS);
+  syncTimer = setInterval(() => {
+    if (!syncInFlight) void sync();
+  }, SYNC_MS);
+}
+// Becoming visible or focused (popup reopened): refresh the clock and snapshot now.
+function resume() {
+  if (!alive || !visible()) return;
+  tickClock();
+  startTimers();
+  void sync();
+}
+function onVisibility() {
+  if (visible()) resume();
+  else stopTimers();
 }
 async function act(action: () => Promise<Snapshot>): Promise<Snapshot> {
   const version = ++stateVersion;
@@ -69,7 +115,7 @@ async function act(action: () => Promise<Snapshot>): Promise<Snapshot> {
   error = '';
   try {
     const next = await action();
-    if (alive && version === stateVersion) snapshot = next;
+    if (alive && version === stateVersion) apply(next);
     return next;
   } catch {
     if (alive && version === stateVersion) error = 'That action did not complete. Please try again.';
@@ -101,19 +147,29 @@ function fire(action: () => Promise<Snapshot>) {
 function updateBell(id: string, enabled: boolean) {
   fire(() => bridge.SetBell(id, enabled));
 }
+function moveFocus(event: KeyboardEvent) {
+  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+  const items = [...document.querySelectorAll<HTMLElement>('.list-area .pr-open, .list-area .section-heading button')];
+  const at = items.indexOf(document.activeElement as HTMLElement);
+  const next = items[at + (event.key === 'ArrowDown' ? 1 : -1)];
+  if (!next) return;
+  event.preventDefault();
+  next.focus();
+}
 function back() {
   settingsOpen = false;
   history.replaceState(null, '', location.pathname);
 }
 onMount(() => {
   void sync();
-  timer = setInterval(() => {
-    now = Date.now();
-    void sync();
-  }, 1000);
+  if (visible()) startTimers();
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('focus', resume);
   const keydown = (event: KeyboardEvent) => {
     if (event.key === 'Escape') {
       void hide();
+    } else if ((event.target as Element | null)?.closest?.('.list-area')) {
+      moveFocus(event);
     }
   };
   const outside = (event: MouseEvent) => {
@@ -123,7 +179,9 @@ onMount(() => {
   document.addEventListener('click', outside);
   return () => {
     alive = false;
-    if (timer) clearInterval(timer);
+    stopTimers();
+    document.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('focus', resume);
     window.removeEventListener('keydown', keydown);
     document.removeEventListener('click', outside);
   };
@@ -147,10 +205,42 @@ onMount(() => {
       <div class="brand">
         <span class="brand-mark"
           ><svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 3.2 18 5.4v5.1c0 4.3-2.7 7.8-6 9.6-3.3-1.8-6-5.3-6-9.6V5.4l6-2.2Z" />
-            <path d="m9.3 11.8 1.8 1.8 3.8-4" />
+            <circle cx="6" cy="6.5" r="2.1" />
+            <circle cx="6" cy="17.5" r="2.1" />
+            <circle cx="14" cy="17.5" r="2.1" />
+            <path d="M6 8.6v6.8M6 13c0 3 3 4.5 6 4.5" />
+            <path
+              d="M16.5 2.5a3.2 3.2 0 0 0-3.2 3.2c0 2.2-1 2.6-1 3.3h8.4c0-.7-1-1.1-1-3.3a3.2 3.2 0 0 0-3.2-3.2ZM15.4 10.4h2.2"
+            />
           </svg></span
-        ><strong>PR Nanny</strong>
+        >
+        <div class="titles">
+          <strong>PR Nanny</strong>
+          {#if snapshot}
+            <span class="connection-line" class:error-connection={snapshot.connection === 'error'}
+              ><span class="connection-dot" class:connected={snapshot.connection === 'connected'}></span
+              ><span
+                >{snapshot.connection === 'connected'
+                  ? `Connected${snapshot.settings.account ? ` as ${snapshot.settings.account}` : ''}`
+                  : ((
+                      {
+                        offline: 'Offline · showing saved pull requests',
+                        rate_limited: 'GitHub rate limit reached',
+                        error: 'Connection problem',
+                        auth_error: 'Authentication expired',
+                        authentication_error: 'Authentication expired',
+                      } as Record<string, string>
+                    )[snapshot.connection] ?? 'Not connected')}</span
+              ><span class="refresh-time"
+                >{snapshot.lastRefresh
+                  ? lastRefresh === 'now'
+                    ? 'Updated just now'
+                    : `Updated ${lastRefresh} ago`
+                  : ''}</span
+              ></span
+            >
+          {/if}
+        </div>
       </div>
       <div class="actions">
         <button
@@ -190,22 +280,6 @@ onMount(() => {
       </div>
     </header>
     {#if snapshot}
-      <div class="connection-bar" class:error-connection={snapshot.connection === 'error'}>
-        <span class="connection-dot" class:connected={snapshot.connection === 'connected'}></span
-        ><span
-          >{snapshot.connection === 'connected'
-            ? `Connected${snapshot.settings.account ? ` as ${snapshot.settings.account}` : ''}`
-            : ((
-                {
-                  offline: 'Offline · showing saved pull requests',
-                  rate_limited: 'GitHub rate limit reached',
-                  error: 'Connection problem',
-                  auth_error: 'Authentication expired',
-                  authentication_error: 'Authentication expired',
-                } as Record<string, string>
-              )[snapshot.connection] ?? 'Not connected')}</span
-        ><span class="refresh-time">{snapshot.lastRefresh ? `Updated ${lastRefresh} ago` : ''}</span>
-      </div>
       {#if error}
         <div class="error-banner" role="alert">{error}</div>
       {:else if statusMessage && (snapshot.connection !== 'connected' || snapshot.message)}
@@ -214,9 +288,14 @@ onMount(() => {
       {#if authRequired}
         <section class="empty-state">
           <div class="empty-icon">
-            <svg viewBox="0 0 40 40" aria-hidden="true">
-              <path d="M20 4.5 31 8.6V18c0 7.8-4.9 14.2-11 17.5C13.9 32.2 9 25.8 9 18V8.6l11-4.1Z" />
-              <path d="m15 20 3.3 3.3 6.7-7" />
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="6" cy="6.5" r="2.1" />
+              <circle cx="6" cy="17.5" r="2.1" />
+              <circle cx="14" cy="17.5" r="2.1" />
+              <path d="M6 8.6v6.8M6 13c0 3 3 4.5 6 4.5" />
+              <path
+                d="M16.5 2.5a3.2 3.2 0 0 0-3.2 3.2c0 2.2-1 2.6-1 3.3h8.4c0-.7-1-1.1-1-3.3a3.2 3.2 0 0 0-3.2-3.2ZM15.4 10.4h2.2"
+              />
             </svg>
           </div>
           <h1>
@@ -242,6 +321,7 @@ onMount(() => {
           </button>
         </section>
       {:else}
+        <p class="sr-only" role="status">{prs.length} {prs.length === 1 ? 'pull request' : 'pull requests'}</p>
         <div class="layout-bar">
           <fieldset class="layout-toggle">
             <legend class="sr-only">Pull request layout</legend>
@@ -282,7 +362,7 @@ onMount(() => {
               </button>
             {/each}
           </nav>
-          <div class="list-area" aria-live="polite">
+          <div class="list-area">
             {#if categoryRows.length}
               <div class="pr-list">
                 {#each categoryRows as pr (pr.id)}
@@ -302,7 +382,7 @@ onMount(() => {
             {/if}
           </div>
         {:else}
-          <div class="list-area all-layout" aria-live="polite">
+          <div class="list-area all-layout">
             {#if prs.length === 0}
               <div class="list-empty">
                 <p>You’re all caught up.</p>
@@ -311,11 +391,20 @@ onMount(() => {
             {:else}
               {#each sections as section}
                 <section class="pr-section">
-                  <div class="section-heading">
-                    <h2>{section.title}</h2>
-                    <span>{section.items.length}</span>
-                  </div>
-                  {#if section.items.length}
+                  <h2 class="section-heading">
+                    <button
+                      type="button"
+                      aria-expanded={!folded[section.key]}
+                      onclick={() => (folded[section.key] = !folded[section.key])}
+                    >
+                      <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3" /></svg>{section.title}<span
+                        >{section.items.length}</span
+                      >
+                    </button>
+                  </h2>
+                  {#if folded[section.key]}
+                    <!-- collapsed -->
+                  {:else if section.items.length}
                     <div class="pr-list">
                       {#each section.items as pr (section.key + pr.id)}
                         <PrRow {pr} {busy} onBell={updateBell} onOpen={openPR} />
