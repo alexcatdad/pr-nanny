@@ -33,11 +33,16 @@ if ($env:PR_NANNY_PREBUILT_FRONTEND -eq '1') {
 $BinDir = Join-Path $Root 'bin'
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 $Binary = Join-Path $BinDir 'pr-nanny.exe'
-$env:CGO_ENABLED = '1'
-$env:GOOS = 'windows'
-$env:GOARCH = 'amd64'
 Push-Location $Root
-try { & go build -tags production -trimpath -ldflags "-H windowsgui -s -w -X main.version=$Version" -o $Binary .; if ($LASTEXITCODE -ne 0) { throw 'Windows production build failed.' } }
+try {
+  & go -C tools/windowsresources run . -root ../..
+  if ($LASTEXITCODE -ne 0) { throw 'Windows resource generation failed.' }
+  $env:CGO_ENABLED = '1'
+  $env:GOOS = 'windows'
+  $env:GOARCH = 'amd64'
+  & go build -tags production -trimpath -ldflags "-H windowsgui -s -w -X main.version=$Version" -o $Binary .
+  if ($LASTEXITCODE -ne 0) { throw 'Windows production build failed.' }
+}
 finally { Pop-Location }
 
 $Dist = Join-Path $Root 'dist'
