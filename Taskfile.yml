@@ -18,9 +18,9 @@ tasks:
       - test -z "$(git ls-files '*.go' | xargs gofmt -l)"
       - go vet ./internal/...
       - go test -race ./internal/...
-      - go test -race -tags production .
       - task: frontend:install
-      - cd frontend && pnpm lint && pnpm check && pnpm test
+      - cd frontend && pnpm lint && pnpm check && pnpm test && pnpm build
+      - go test -race -tags production .
 
   frontend:install:
     internal: true
