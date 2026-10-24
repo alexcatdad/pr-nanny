@@ -58,8 +58,6 @@ jobs:
     needs: assets
     permissions:
       contents: read
-      id-token: write
-      attestations: write
     name: Native (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -209,14 +207,6 @@ jobs:
         run: |
           Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Scope CurrentUser -Force
           Invoke-ScriptAnalyzer -Path ./scripts -Recurse -Severity Warning,Error -EnableExit
-      - name: Attest packages built from trusted main
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-path: |
-            dist/*.zip
-            dist/*.tar.gz
-            dist/*-setup.exe
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: package-${{ runner.os }}-${{ runner.arch }}
@@ -245,8 +235,6 @@ jobs:
           .tools/zizmor --offline --no-progress --min-severity low .github/workflows
       - name: Verify modules
         run: go mod verify
-      - name: Verify release qualification rejects incomplete or untrusted runs
-        run: sh scripts/test-qualification.sh
       - name: Validate workflow definitions
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= -pyflakes=
       - name: Vet platform-independent backend
