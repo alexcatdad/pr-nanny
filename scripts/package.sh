@@ -41,7 +41,8 @@ case "$TARGET" in
     [ "$(uname -m)" = arm64 ] || { echo "macOS ARM64 packaging requires an Apple Silicon host" >&2; exit 2; }
     [ -f "$ROOT/build/darwin/icon.icns" ] || { echo "missing build/darwin/icon.icns" >&2; exit 1; }
     GOOS=darwin GOARCH=arm64
-    SHORT_VERSION=${VERSION%%[-+]*}
+    SHORT_VERSION=${MACOS_SHORT_VERSION:-${VERSION%%[-+]*}}
+    BUNDLE_VERSION=${MACOS_BUNDLE_VERSION:-$SHORT_VERSION}
     printf '%s\n' "$SHORT_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "macOS bundle version must begin with numeric major.minor.patch" >&2; exit 2; }
     binary="$ROOT/bin/pr-nanny"
     build_binary "$binary"
@@ -62,19 +63,28 @@ case "$TARGET" in
 <key>CFBundleDisplayName</key><string>PR Nanny</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>$SHORT_VERSION</string>
-<key>CFBundleVersion</key><string>$SHORT_VERSION</string>
+<key>CFBundleVersion</key><string>$BUNDLE_VERSION</string>
 <key>LSUIElement</key><true/>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 </dict></plist>
 EOF
-    codesign --force --deep --sign - "$app"
+    if [ -n "${MACOS_SIGNING_IDENTITY:-}" ]; then
+      # Local release: Developer ID, hardened runtime and secure timestamp.
+      set -- --force --options runtime --timestamp --sign "$MACOS_SIGNING_IDENTITY"
+      if [ -n "${MACOS_ENTITLEMENTS:-}" ]; then set -- "$@" --entitlements "$MACOS_ENTITLEMENTS"; fi
+      codesign "$@" "$app/Contents/MacOS/pr-nanny"
+      codesign "$@" "$app"
+      codesign --verify --deep --strict "$app"
+    else
+      codesign --force --deep --sign - "$app"
+    fi
     archive="$ROOT/dist/pr-nanny-$VERSION-darwin-arm64.zip"
     rm -f "$archive"
     ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
     checksum "$archive"
-    echo "Created unsigned/ad-hoc-signed app archive: $archive"
+    echo "Created app archive: $archive"
     ;;
   linux)
     [ "$(uname -s)" = Linux ] || { echo "Linux packaging requires a Linux host with GTK4 and WebKitGTK 6 development files" >&2; exit 2; }

@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
 
-const appVersion = readFileSync(new URL('../VERSION', import.meta.url), 'utf8').trim();
+// A local release supplies the reserved version; ordinary builds read VERSION.
+const appVersion = (process.env.RELEASE_VERSION ?? readFileSync(new URL('../VERSION', import.meta.url), 'utf8')).trim();
 if (!appVersion) throw new Error('VERSION must contain a build version');
 
 const contentSecurityPolicy = [
