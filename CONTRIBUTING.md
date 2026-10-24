@@ -44,7 +44,6 @@ It checks formatting without rewriting files, runs Go vet and pinned golangci-li
 sh scripts/coverage-go.sh
 (cd frontend && pnpm test:coverage && pnpm test:e2e && pnpm build)
 go test -race -tags production .
-sh scripts/test-qualification.sh
 gitleaks git --redact --no-banner --log-opts='--all'
 go mod verify
 go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./internal/...
@@ -58,7 +57,7 @@ Go coverage is race-enabled and atomic, with an 80% core floor, an HTML report a
 
 ## Production packaging
 
-`VERSION` is the sole release version source. Change it only for an intentional release. Ordinary documentation and dependency PRs need no version bump. See [build/README.md](build/README.md) for qualified publication and Homebrew.
+`VERSION` is the version of ordinary development builds and CI packages. Released builds take the version reserved by the local release tooling through `RELEASE_VERSION` (CalVer `YYYY.M.N`); `scripts/read-version.sh` and the frontend build prefer it when set. Do not bump `VERSION` for a release. See [Releases](#releases) and [build/README.md](build/README.md).
 
 ```sh
 (cd frontend && pnpm build)
@@ -72,10 +71,35 @@ Use `linux` on a Linux x64 build host. On Windows use `scripts/package-windows.p
 
 ## CI and desktop evidence
 
-Validation runs frontend, lint, coverage, security, CodeQL and the three native targets. The stable `Qualification` job requires every validation job to succeed. Platform builds reuse the same run's production frontend artifact; test fixtures are built separately. No path filters skip release/security qualification.
+Validation runs frontend, lint, coverage, security, CodeQL and the native build and test targets, for validation only. CI never builds release artifacts, signs, publishes, tags or updates the tap. The stable `Qualification` job requires every validation job to succeed. Platform builds reuse the same run's production frontend artifact; test fixtures are built separately. No path filters skip release/security qualification.
 
 Native jobs exercise the real packaged app, embedded frontend IPC, isolated native credential-store roundtrips, and package integrity. Windows and Linux also probe native tray hide/show, autostart registration/removal and notification dispatch. Linux verifies D-Bus activation and Dunst receipt. Windows exercises Start Menu installation/removal; Linux uses isolated XDG installation/removal. macOS uses a disposable test keychain.
 
 An unattended runner does not establish physical tray clicks, a later login, notification delivery on every desktop, or an unlocked interactive Windows session. macOS notification permissions and bundled autostart need separate desktop acceptance. Do not claim unavailable physical testing. Never run credential-store roundtrip tests against a normal user vault; ordinary Go tests use doubles.
 
 The application has no telemetry, GitHub mutations, subscription changes, remote frontend code, or plaintext credential fallback. Keep OS permissions minimal and redact upstream errors.
+
+## Releases
+
+Releases are started only by an explicit local invocation on the coordinator Mac with [release-tools](https://github.com/alexcatdad/release-tools) `reltool`, pinned in `Taskfile.yml` (`RELTOOL_TAG` and `RELTOOL_COMMIT`). Nothing in GitHub Actions releases, signs, tags, dispatches or updates the tap. Check out `release-tools` next to this repository (`../release-tools`, tags fetched) and install [Go Task](https://taskfile.dev), Node 24.19 and pnpm 11.25.
+
+Machine-specific settings (state directory, signing identity, notary profile name, optional SSH workers) live in `~/.config/release-tools/config.json`, outside any checkout. A release needs this file. Its `signing.pr-nanny` entry must name the Developer ID Application identity and the `notarytool` keychain profile; see `docs/consumer.md` and `examples/local/config.json` in release-tools.
+
+```sh
+task release:check    # read-only preflight: clean tree, next version, targets, signing identity, notary profile
+task release:prepare  # reserve a version, run checks, build, sign, notarize, staple; publishes nothing
+task release          # prepare, then draft release, SHA-256 verified upload, publish, tap update
+task release:resume   # continue an interrupted release with the same version and artifacts
+task release:abandon -- VERSION   # drop an unpublished reservation
+```
+
+Versions are `YYYY.M.N` and tags `vYYYY.M.N`; earlier `0.1.x` tags remain as history. Targets are declared in `release.json`:
+
+| Target | Artifact | Builds on |
+|---|---|---|
+| `darwin-arm64` (macOS 13+) | `pr-nanny-VERSION-darwin-arm64.zip`, signed, notarized, stapled | the coordinator Mac |
+| `linux-amd64` (glibc 2.39+) | `pr-nanny-VERSION-linux-x64.tar.gz` | an SSH worker with GTK4 and WebKitGTK 6 (`runs: worker`) |
+
+The Linux target needs a configured worker whose `capabilities` include `linux`, `amd64`, `gtk4` and `webkitgtk-6.0`; without one, `release:check` reports the target unplaceable and publication is blocked. Windows assets of earlier releases remain as history; no Windows build is produced. The Windows sources and CI validation stay.
+
+The macOS build task signs with the hardened runtime using `MACOS_SIGNING_IDENTITY` (and `MACOS_ENTITLEMENTS` when configured); `reltool` verifies the signature, notarizes and staples. The Homebrew cask (macOS) and formula (Linux) are both updated from the published release.

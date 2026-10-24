@@ -32,16 +32,16 @@ CI summaries combine check runs and commit statuses. A failure takes precedence 
 
 ## Download and install
 
-Qualified release archives use the version from [`VERSION`](VERSION):
+Release archives are named with the release version (`YYYY.M.N`; earlier releases are `0.1.x`). The macOS and Linux assets below are produced by the local release task; the Windows assets of earlier releases remain available but no new Windows builds are published:
 
-- **macOS:** `pr-nanny-VERSION-darwin-arm64.dmg` — macOS 13 or newer, Apple Silicon. Open the DMG and drag **PR Nanny.app** onto **Applications**.
-- **Windows:** `pr-nanny-VERSION-windows-x64-setup.exe` — Windows 10/11 x64. Run Setup; it installs for your account, adds a Start Menu entry and supplies Microsoft WebView2 when missing. Removing the app through Windows Settings preserves preferences and credentials.
+- **macOS:** `pr-nanny-VERSION-darwin-arm64.zip` — macOS 13 or newer, Apple Silicon. Unzip and drag **PR Nanny.app** onto **Applications**. Earlier releases also carried a DMG.
+- **Windows (earlier releases only):** `pr-nanny-VERSION-windows-x64-setup.exe` — Windows 10/11 x64. Run Setup; it installs for your account, adds a Start Menu entry and supplies Microsoft WebView2 when missing. Removing the app through Windows Settings preserves preferences and credentials.
 - Portable `.zip` archives remain available for macOS and Windows.
 - `pr-nanny-VERSION-linux-x64.tar.gz` — Linux x64 with glibc 2.39 or newer, GTK4, WebKitGTK 6, and a Secret Service-compatible credential store such as GNOME Keyring or KWallet with Secret Service enabled. Ubuntu 24.04 and current Fedora releases are the target environments.
 
-Download qualified archives from [Releases](https://github.com/alexcatdad/pr-nanny/releases). Before a release qualifies, each successful native CI job provides a `package-*` workflow artifact for testing. Verify the adjacent `.sha256` file or release `SHA256SUMS` before installing. A successful individual platform job does not establish qualification of the other platforms.
+Download archives from [Releases](https://github.com/alexcatdad/pr-nanny/releases). Verify the release `SHA256SUMS` before installing. CI artifacts are validation evidence only and are not release downloads.
 
-The macOS app and DMG are Developer ID signed, notarised and stapled before publication. Signing credentials stay in the maintainer's local Keychain. The ZIP remains available for Homebrew and portable installation.
+The macOS app is Developer ID signed, notarised and stapled before publication. Signing credentials stay in the maintainer's local Keychain. The ZIP is the Homebrew and portable installation.
 
 The Windows installer and executable are unsigned and may show a publisher or SmartScreen warning. The installer requires an internet connection only if it needs to install WebView2. The optional portable ZIP includes `install.ps1` and `uninstall.ps1` for shortcut management.
 
@@ -65,4 +65,4 @@ Ubuntu 24.04+ may need a per-application AppArmor allowance so WebKit can create
 
 ## Development and verification
 
-Run `sh scripts/lint.sh` for local formatting, lint and type checks; see [CONTRIBUTING.md](CONTRIBUTING.md) for tests and platform prerequisites. CI retains readable Go and frontend coverage artifacts. Release publication requires every qualification job on the exact source commit, matching package checksums, and verified build provenance. Review [the implementation checkpoint](docs/IMPLEMENTATION-STATUS.md) for the distinction between completed and pending qualification.
+Run `sh scripts/lint.sh` for local formatting, lint and type checks; see [CONTRIBUTING.md](CONTRIBUTING.md) for tests and platform prerequisites. CI retains readable Go and frontend coverage artifacts. Releases are built, signed and published only by the explicit local `task release` flow described in [CONTRIBUTING.md](CONTRIBUTING.md#releases); CI validates and never releases. Review [the implementation checkpoint](docs/IMPLEMENTATION-STATUS.md) for the distinction between completed and pending qualification.

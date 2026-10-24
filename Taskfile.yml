@@ -1,0 +1,91 @@
+version: "3"
+
+# Local releases only. CI validates (.github/workflows/ci.yml) and never
+# releases. See CONTRIBUTING.md "Releases".
+
+vars:
+  RELTOOL_TAG: v0.2.0
+  RELTOOL_COMMIT: 6036a85828711fbfb908f67e159482597c4434c0 # commit of RELTOOL_TAG
+  RELTOOL_SRC: ../release-tools
+  RELTOOL:
+    sh: echo "${XDG_CACHE_HOME:-$HOME/.cache}/release-tools/{{.RELTOOL_COMMIT}}/reltool"
+
+tasks:
+  # --- app-owned tasks, called by reltool from release.json ---
+  check:
+    desc: Formatting, vet, Go tests and frontend lint, type check and unit tests
+    cmds:
+      - test -z "$(git ls-files '*.go' | xargs gofmt -l)"
+      - go vet ./internal/...
+      - go test -race ./internal/...
+      - task: frontend:install
+      - cd frontend && pnpm lint && pnpm check && pnpm test && pnpm build
+      - go test -race -tags production .
+
+  frontend:install:
+    internal: true
+    cmds:
+      - cd frontend && pnpm install --frozen-lockfile
+
+  build:darwin-arm64:
+    desc: Build, sign (when MACOS_SIGNING_IDENTITY is set) and package the macOS app zip
+    cmds:
+      - task: frontend:install
+      - sh scripts/package.sh "$RELEASE_VERSION" darwin
+      - cp "dist/pr-nanny-$RELEASE_VERSION-darwin-arm64.zip" "$RELEASE_OUT/"
+
+  validate:darwin-arm64:
+    cmds:
+      - sh scripts/verify-package.sh dist
+      - sh scripts/check-production.sh bin/pr-nanny
+      - |
+        smoke=$(mktemp -d)
+        trap 'rm -rf "$smoke"' EXIT
+        ditto -x -k "dist/pr-nanny-$RELEASE_VERSION-darwin-arm64.zip" "$smoke"
+        "$smoke/PR Nanny.app/Contents/MacOS/pr-nanny" --smoke-test
+
+  build:linux-amd64:
+    desc: Build and package the Linux x64 archive (needs a Linux worker with GTK4 and WebKitGTK 6)
+    cmds:
+      - task: frontend:install
+      - sh scripts/package.sh "$RELEASE_VERSION" linux
+      - cp "dist/pr-nanny-$RELEASE_VERSION-linux-x64.tar.gz" "$RELEASE_OUT/"
+
+  validate:linux-amd64:
+    cmds:
+      - sh scripts/verify-package.sh dist
+      - sh scripts/check-production.sh bin/pr-nanny
+      - sh scripts/test-install-linux.sh "dist/pr-nanny-$RELEASE_VERSION-linux-x64.tar.gz"
+
+  # --- release-tools consumer snippet (docs/consumer.md in release-tools) ---
+  reltool:install:
+    internal: true
+    status:
+      - test -x "{{.RELTOOL}}"
+    cmds:
+      - git -C "{{.RELTOOL_SRC}}" show "{{.RELTOOL_COMMIT}}:scripts/install-reltool.sh" | sh -s -- "{{.RELTOOL_SRC}}" "{{.RELTOOL_TAG}}" "{{.RELTOOL_COMMIT}}"
+
+  release:check:
+    deps: [reltool:install]
+    cmds:
+      - '"{{.RELTOOL}}" release check --task-exe "{{.TASK_EXE}}" {{.CLI_ARGS}}'
+
+  release:prepare:
+    deps: [reltool:install]
+    cmds:
+      - '"{{.RELTOOL}}" release prepare --task-exe "{{.TASK_EXE}}" {{.CLI_ARGS}}'
+
+  release:
+    deps: [reltool:install]
+    cmds:
+      - '"{{.RELTOOL}}" release run --task-exe "{{.TASK_EXE}}" {{.CLI_ARGS}}'
+
+  release:resume:
+    deps: [reltool:install]
+    cmds:
+      - '"{{.RELTOOL}}" release resume --task-exe "{{.TASK_EXE}}" {{.CLI_ARGS}}'
+
+  release:abandon:
+    deps: [reltool:install]
+    cmds:
+      - '"{{.RELTOOL}}" release abandon {{.CLI_ARGS}}'
