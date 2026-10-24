@@ -1,6 +1,6 @@
 module github.com/alexcatdad/pr-nanny/tools/windowsresources
 
-go 1.27.2
+go 1.27.3
 
 require github.com/tc-hib/winres v0.3.1
 
