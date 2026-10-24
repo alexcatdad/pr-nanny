@@ -1,0 +1,37 @@
+{
+  "schema": "release-tools/app/v1",
+  "app": "pr-nanny",
+  "repo": "alexcatdad/pr-nanny",
+  "checks": ["check"],
+  "targets": [
+    {
+      "id": "darwin-arm64",
+      "os": "darwin",
+      "arch": "arm64",
+      "min_os": "13.0",
+      "build_task": "build:darwin-arm64",
+      "validate_task": "validate:darwin-arm64",
+      "artifacts": [{ "name": "pr-nanny-{version}-darwin-arm64.zip", "kind": "zip" }]
+    },
+    {
+      "id": "linux-amd64",
+      "os": "linux",
+      "arch": "amd64",
+      "min_os": "glibc-2.39",
+      "runs": "worker",
+      "requires": ["gtk4", "webkitgtk-6.0"],
+      "build_task": "build:linux-amd64",
+      "validate_task": "validate:linux-amd64",
+      "artifacts": [{ "name": "pr-nanny-{version}-linux-x64.tar.gz", "kind": "tar.gz" }]
+    }
+  ],
+  "migration": { "floor": "0.1.1" },
+  "signing": {
+    "macos": {
+      "targets": ["darwin-arm64"],
+      "notarize": true,
+      "staple": true
+    }
+  },
+  "tap": { "repo": "alexcatdad/homebrew-tap", "kind": "cask", "package": "pr-nanny" }
+}
