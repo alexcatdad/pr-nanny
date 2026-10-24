@@ -26,8 +26,8 @@ bootstrapper path still requires separate acceptance.
 Homebrew supports macOS and Linux (including WSL); it has no native Windows
 package support. The tap (`alexcatdad/homebrew-tap`) is updated by the local
 release task from the published, verified release: `Casks/pr-nanny.rb` (macOS
-arm64 zip) is updated by `task release`; `Formula/pr-nanny.rb` (Linux x64
-tar.gz) is not yet covered (single tap entry per app in release-tools v0.1.0).
+arm64 zip) is updated by `task release`, and `Formula/pr-nanny.rb` (Linux x64
+tar.gz) is updated by the same task as a separate step.
 The Linux formula relies on system GTK4 and WebKitGTK 6.0.
 
 PR Nanny is available in the existing tap. Install with:

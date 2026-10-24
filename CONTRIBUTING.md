@@ -102,4 +102,4 @@ Versions are `YYYY.M.N` and tags `vYYYY.M.N`; earlier `0.1.x` tags remain as his
 
 The Linux target needs a configured worker whose `capabilities` include `linux`, `amd64`, `gtk4` and `webkitgtk-6.0`; without one, `release:check` reports the target unplaceable and publication is blocked. Windows assets of earlier releases remain as history; no Windows build is produced. The Windows sources and CI validation stay.
 
-The macOS build task signs with the hardened runtime using `MACOS_SIGNING_IDENTITY` (and `MACOS_ENTITLEMENTS` when configured); `reltool` verifies the signature, notarizes and staples. The Homebrew cask is updated from the published release; the Linux formula is not yet updated by the local release (see the migration pull request).
+The macOS build task signs with the hardened runtime using `MACOS_SIGNING_IDENTITY` (and `MACOS_ENTITLEMENTS` when configured); `reltool` verifies the signature, notarizes and staples. The Homebrew cask (macOS) and formula (Linux) are both updated from the published release.
