@@ -1,21 +1,16 @@
 # Release packaging
 
-`VERSION` is the single SemVer source for application builds and release
-metadata. `scripts/package.sh [VERSION] darwin` or
+`VERSION` is the SemVer source for development and CI builds. When `RELEASE_VERSION` is set (local releases), `scripts/read-version.sh` and the frontend build use it instead. `scripts/package.sh [VERSION] darwin` or
 `scripts/package.sh [VERSION] linux` creates macOS or Linux archives; Windows
 uses `scripts/package-windows.ps1 [-Version VERSION]`. An optional version must
-match `VERSION`. Each script passes that value to the Go binary and the
-frontend build reads the same root `VERSION` file. Packaging uses the
+match the resolved version. Each script passes that value to the Go binary and the
+frontend build resolves the same value. Packaging uses the
 `production` build tag and writes a SHA-256 sidecar next to each archive. Set
 `PR_NANNY_PREBUILT_FRONTEND=1` only when `frontend/dist/index.html` was built
 from this same source tree. Run `scripts/verify-package.sh` after producing
 archives.
 
-CI's macOS ARM64 archive is an ad-hoc-signed input to local release signing.
-Published macOS betas are Developer ID signed and notarised; the DMG provides
-drag-to-Applications installation and the ZIP remains the Homebrew input.
-Windows also produces a per-user `*-setup.exe` with a Start Menu shortcut,
-uninstaller and Microsoft-signed WebView2 bootstrapper. Windows remains unsigned.
+Release archives are produced by the local release task (`task release`; see [CONTRIBUTING.md](../CONTRIBUTING.md#releases)), which passes the reserved version as `RELEASE_VERSION`. The macOS app is Developer ID signed, notarised and stapled locally (see [SIGNING.md](SIGNING.md)); CI archives are ad-hoc-signed validation builds. The release matrix is macOS ARM64 (zip) and Linux x64 (tar.gz). Windows packaging scripts remain for CI validation, but no Windows release is built or published; earlier Windows assets remain as history.
 Linux requires GTK4,
 WebKitGTK 6.0, glibc 2.39 or newer, and a Secret Service-compatible credential
 store. Linux binaries are built on Ubuntu 24.04. Its installer and uninstaller
@@ -28,22 +23,12 @@ launch the isolated frontend/IPC smoke test, then uninstall and verify that
 synthetic user data survives. This runner already has WebView2; the missing-runtime
 bootstrapper path still requires separate acceptance.
 
-After signing and stapling the macOS app, create the DMG with
-`CODESIGN_IDENTITY='Developer ID Application: ...' sh scripts/package-dmg.sh SIGNED.zip VERSION dist`.
-Submit the DMG using the existing local notarytool Keychain profile, staple the
-accepted DMG, then run `sh scripts/verify-dmg.sh IMAGE.dmg VERSION SIGNED.zip`.
-Only compute its checksum after stapling. Verification checks the image and app
-signatures/tickets, the Applications link and the exact ZIP-contained app.
-
 Homebrew supports macOS and Linux (including WSL); it has no native Windows
-package support. `scripts/homebrew.sh cask VERSION URL SHA256` and
-`scripts/homebrew.sh formula VERSION URL SHA256` emit separate templates. Both
-commands reject a version that does not match `VERSION` and require real HTTPS
-archive URLs and SHA-256 values. The Linux formula relies on system GTK4 and
-WebKitGTK 6.0. Qualified GitHub Releases include `pr-nanny-cask.rb` and
-`pr-nanny-formula.rb`; the release workflow verifies each archive's source
-attestation and checksum before publishing them. Tap changes are reviewed
-separately in the existing `alexcatdad/homebrew-tap` repository.
+package support. The tap (`alexcatdad/homebrew-tap`) is updated by the local
+release task from the published, verified release: `Casks/pr-nanny.rb` (macOS
+arm64 zip) is updated by `task release`; `Formula/pr-nanny.rb` (Linux x64
+tar.gz) is not yet covered (single tap entry per app in release-tools v0.1.0).
+The Linux formula relies on system GTK4 and WebKitGTK 6.0.
 
 PR Nanny is available in the existing tap. Install with:
 
