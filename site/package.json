@@ -8,7 +8,7 @@
     "check:links": "node ./scripts/check-links.mjs"
   },
   "devDependencies": {
-    "astro": "7.4.0"
+    "astro": "7.4.2"
   },
   "engines": {
     "node": ">=22.22.0"
