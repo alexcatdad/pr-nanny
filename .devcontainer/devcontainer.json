@@ -1,0 +1,10 @@
+{
+  "//": "Linux container for Go backend work only. macOS-only parts (Swift menu-bar app in macos/, Keychain, code signing and notarization) do not work here.",
+  "name": "pr-nanny (Go)",
+  "image": "mcr.microsoft.com/devcontainers/go:1.27@sha256:32aad7e9eefed4fe99987cc4efef2f9723bd57c556f171143ecf65e0ba855ff3",
+  "features": {
+    "ghcr.io/devcontainers-extra/features/go-task:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "postCreateCommand": "go mod download"
+}
