@@ -1,3 +1,4 @@
+// Package notify queues gated monitor events for the menu-bar app to read by cursor.
 package notify
 
 import (
@@ -13,7 +14,7 @@ import (
 )
 
 // MaxBatch bounds one NextNotifications reply and the retained queue.
-const MaxBatch = queueSize
+const MaxBatch = 64
 
 // Title returns the fixed notification title for an event, or "" for an
 // unknown event. Titles never contain API data.
@@ -62,8 +63,8 @@ type entry struct {
 }
 
 // Queue implements core.Notifier for a UI that pulls notifications. Notify
-// never blocks the monitor; gating runs when the UI reads, as in Dispatcher's
-// delivery worker, so settings changed in between suppress queued items.
+// never blocks the monitor; gating runs when the UI reads, so settings changed
+// in between suppress queued items.
 type Queue struct {
 	mu      sync.Mutex
 	epoch   string
