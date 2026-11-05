@@ -4,7 +4,7 @@
 
 PR Nanny passively monitors GitHub.com pull requests for one authenticated GitHub account. It may read GitHub API data and display local notifications. It does not mutate pull requests, reviews, checks, comments, repository settings, or GitHub review subscriptions. It does not support GitHub Enterprise Server or multiple accounts.
 
-Supported targets are macOS 13+ ARM64, Windows 10/11 x64 with WebView2, and Linux x64 with GTK4, WebKitGTK 6, glibc 2.39+, and a Secret Service-compatible credential store. Windows distribution is a zip, not an installer. Homebrew supports macOS/Linux only, including WSL for Linux; Homebrew-based native Windows installation is unsupported, and WinGet is out of scope.
+The only supported target is macOS 13+ on Apple Silicon, distributed as a zip and a Homebrew cask. Windows and Linux are not supported.
 
 ## Discovery and display
 

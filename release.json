@@ -19,25 +19,6 @@
           "kind": "zip"
         }
       ]
-    },
-    {
-      "id": "linux-amd64",
-      "os": "linux",
-      "arch": "amd64",
-      "min_os": "glibc-2.39",
-      "runs": "worker",
-      "requires": [
-        "gtk4",
-        "webkitgtk-6.0"
-      ],
-      "build_task": "build:linux-amd64",
-      "validate_task": "validate:linux-amd64",
-      "artifacts": [
-        {
-          "name": "pr-nanny-{version}-linux-x64.tar.gz",
-          "kind": "tar.gz"
-        }
-      ]
     }
   ],
   "migration": {
@@ -56,15 +37,5 @@
     "repo": "alexcatdad/homebrew-tap",
     "kind": "cask",
     "package": "pr-nanny"
-  },
-  "taps": [
-    {
-      "repo": "alexcatdad/homebrew-tap",
-      "kind": "formula",
-      "package": "pr-nanny",
-      "targets": [
-        "linux-amd64"
-      ]
-    }
-  ]
+  }
 }

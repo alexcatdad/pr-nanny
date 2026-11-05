@@ -16,11 +16,7 @@ build_binary() {
   else
     (cd "$ROOT/frontend" && pnpm run build)
   fi
-  if [ "$GOOS" = darwin ]; then
-    (cd "$ROOT" && CGO_ENABLED=1 GOOS="$GOOS" GOARCH="$GOARCH" MACOSX_DEPLOYMENT_TARGET=13.0 CGO_CFLAGS="-mmacosx-version-min=13.0" CGO_LDFLAGS="-mmacosx-version-min=13.0" go build -tags production -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$output" .)
-  else
-    (cd "$ROOT" && CGO_ENABLED=1 GOOS="$GOOS" GOARCH="$GOARCH" go build -tags production -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$output" .)
-  fi
+  (cd "$ROOT" && CGO_ENABLED=1 GOOS="$GOOS" GOARCH="$GOARCH" MACOSX_DEPLOYMENT_TARGET=13.0 CGO_CFLAGS="-mmacosx-version-min=13.0" CGO_LDFLAGS="-mmacosx-version-min=13.0" go build -tags production -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$output" .)
 }
 
 checksum() {
@@ -86,75 +82,5 @@ EOF
     checksum "$archive"
     echo "Created app archive: $archive"
     ;;
-  linux)
-    [ "$(uname -s)" = Linux ] || { echo "Linux packaging requires a Linux host with GTK4 and WebKitGTK 6 development files" >&2; exit 2; }
-    [ "$(uname -m)" = x86_64 ] || { echo "Linux x64 packaging requires an x86_64 host" >&2; exit 2; }
-    if ! command -v pkg-config >/dev/null || ! pkg-config --exists gtk4 webkitgtk-6.0; then
-      echo "install GTK4 and WebKitGTK 6 development packages" >&2
-      exit 2
-    fi
-    [ -f "$ROOT/assets/icon.png" ] || { echo "missing assets/icon.png" >&2; exit 1; }
-    GOOS=linux GOARCH=amd64
-    binary="$ROOT/bin/pr-nanny"
-    build_binary "$binary"
-    stage=$(mktemp -d "$ROOT/dist/.package.XXXXXX")
-    trap 'rm -rf "$stage"' EXIT HUP INT TERM
-    root="$stage/pr-nanny-$VERSION"
-    mkdir -p "$root/bin" "$root/share/applications" "$root/share/icons/hicolor/256x256/apps" "$root/scripts"
-    install -m 755 "$binary" "$root/bin/pr-nanny"
-    install -m 644 "$ROOT/LICENSE" "$root/LICENSE"
-    install -m 755 "$ROOT/scripts/apparmor-profile.sh" "$root/scripts/apparmor-profile.sh"
-    install -m 644 "$ROOT/build/linux/APPARMOR.md" "$root/APPARMOR.md"
-    cat > "$root/README.txt" <<EOF
-PR Nanny $VERSION for Linux x64
-
-Requirements: GTK4, WebKitGTK 6.0, a Secret Service-compatible credential
-store (for example GNOME Keyring or KWallet with Secret Service enabled), and
-an XDG desktop session. Run ./install.sh to install for the current user.
-Run ./uninstall.sh to remove the installed files.
-Ubuntu 24.04+ may require the exact-path AppArmor allowance in APPARMOR.md.
-EOF
-    cp "$ROOT/assets/icon.png" "$root/share/icons/hicolor/256x256/apps/pr-nanny.png"
-    cat > "$root/share/applications/pr-nanny.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=PR Nanny
-Comment=Passively monitor your GitHub pull requests
-Exec=pr-nanny
-Icon=pr-nanny
-Terminal=false
-Categories=Development;Utility;
-StartupNotify=true
-EOF
-    cat > "$root/install.sh" <<'EOF'
-#!/bin/sh
-set -eu
-HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-DATA_HOME=${XDG_DATA_HOME:-"$HOME/.local/share"}
-BIN_HOME=${XDG_BIN_HOME:-"$HOME/.local/bin"}
-mkdir -p "$DATA_HOME/applications" "$DATA_HOME/icons/hicolor/256x256/apps" "$BIN_HOME"
-install -m 755 "$HERE/bin/pr-nanny" "$BIN_HOME/pr-nanny"
-sed '/^Exec=/d' "$HERE/share/applications/pr-nanny.desktop" > "$DATA_HOME/applications/pr-nanny.desktop"
-desktop_exec=$(printf '%s' "$BIN_HOME/pr-nanny" | sed 's/[\\"`$]/\\&/g;s/%/%%/g')
-printf 'Exec="%s"\n' "$desktop_exec" >> "$DATA_HOME/applications/pr-nanny.desktop"
-chmod 644 "$DATA_HOME/applications/pr-nanny.desktop"
-install -m 644 "$HERE/share/icons/hicolor/256x256/apps/pr-nanny.png" "$DATA_HOME/icons/hicolor/256x256/apps/pr-nanny.png"
-printf 'Installed for this user. Ensure %s is on PATH.\n' "$BIN_HOME"
-EOF
-    cat > "$root/uninstall.sh" <<'EOF'
-#!/bin/sh
-set -eu
-DATA_HOME=${XDG_DATA_HOME:-"$HOME/.local/share"}
-BIN_HOME=${XDG_BIN_HOME:-"$HOME/.local/bin"}
-rm -f "$BIN_HOME/pr-nanny" "$DATA_HOME/applications/pr-nanny.desktop" "$DATA_HOME/icons/hicolor/256x256/apps/pr-nanny.png"
-printf 'Removed PR Nanny application files. User settings and credentials were kept.\n'
-EOF
-    chmod 755 "$root/install.sh" "$root/uninstall.sh"
-    archive="$ROOT/dist/pr-nanny-$VERSION-linux-x64.tar.gz"
-    rm -f "$archive"
-    tar -C "$stage" -czf "$archive" "pr-nanny-$VERSION"
-    checksum "$archive"
-    echo "Created Linux archive: $archive"
-    ;;
-  *) echo "usage: $0 [version] [darwin|linux]" >&2; exit 2;;
+  *) echo "usage: $0 [version] [darwin]" >&2; exit 2;;
 esac

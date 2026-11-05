@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -37,7 +36,7 @@ func TestAtomicPrivateRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		if info.Mode().Perm() != 0o600 {
 			t.Errorf("%s permissions = %o", name, info.Mode().Perm())
 		}
 	}
@@ -210,9 +209,6 @@ func TestSettingsNormalizesOmittedVersionedDefaults(t *testing.T) {
 }
 
 func TestOpenRootRejectsSettingsSymlinkOutsideDataDirectory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlink creation requires privileges not guaranteed on Windows CI")
-	}
 	root := filepath.Join(t.TempDir(), "private")
 	outside := filepath.Join(t.TempDir(), "settings.json")
 	if err := os.Mkdir(root, 0o700); err != nil {

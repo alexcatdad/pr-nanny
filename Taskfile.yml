@@ -1,6 +1,7 @@
 version: "3"
 
-# Local releases only. CI validates (.github/workflows/ci.yml) and never
+# Local releases only. CI (.github/workflows/validation.yml) calls the
+# lint/build/test/security tasks through alexcatdad/ci-actions and never
 # releases. See CONTRIBUTING.md "Releases".
 
 vars:
@@ -9,24 +10,92 @@ vars:
   RELTOOL_SRC: ../release-tools
   RELTOOL:
     sh: echo "${XDG_CACHE_HOME:-$HOME/.cache}/release-tools/{{.RELTOOL_COMMIT}}/reltool"
+  VERSION:
+    sh: sh scripts/read-version.sh
+  GITLEAKS: github.com/zricethezav/gitleaks/v8@v8.30.1
+  GOVULNCHECK: golang.org/x/vuln/cmd/govulncheck@v1.9.0
+  ACTIONLINT: github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 
 tasks:
-  # --- app-owned tasks, called by reltool from release.json ---
+  # --- local gate; CI runs the same tasks ---
   check:
-    desc: Formatting, vet, Go tests and frontend lint, type check and unit tests
+    desc: Everything CI runs - lint, build, tests (incl. browser e2e) and security scans
     cmds:
-      - test -z "$(git ls-files '*.go' | xargs gofmt -l)"
-      - go vet ./internal/...
-      - go test -race ./internal/...
-      - task: frontend:install
-      - cd frontend && pnpm lint && pnpm check && pnpm test && pnpm build
+      - task: lint
+      - task: build
+      - task: test
+      - task: test:integration
+      - task: security
+
+  lint:
+    desc: Formatting, go vet, golangci-lint, shellcheck, actionlint, zizmor and frontend lint/type check
+    cmds:
+      - task: tools:install
+      - test -z "$(git ls-files '*.go' | xargs gofmt -l)" || { git ls-files '*.go' | xargs gofmt -l; echo 'Run gofmt on the files above' >&2; exit 1; }
+      - go vet ./internal/... ./cmd/...
+      - task: frontend:dist
+      - go vet -tags production .
+      - go -C tools/lint build -o ../../.tools/golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+      - .tools/golangci-lint run --config .golangci.yml ./internal/... ./cmd/...
+      - .tools/shellcheck scripts/*.sh
+      - PATH="$PWD/.tools:$PATH" go run {{.ACTIONLINT}} -pyflakes=
+      - .tools/zizmor --offline --no-progress --min-severity low .github/workflows
+      - cd frontend && pnpm lint && pnpm check
+
+  build:
+    desc: Build the production helper and the production Wails app
+    cmds:
+      - task: frontend:dist
+      - mkdir -p bin
+      - CGO_ENABLED=0 go build -tags production -trimpath -ldflags "-s -w -X main.version={{.VERSION}}" -o bin/pr-nanny-helper ./cmd/pr-nanny-helper
+      - MACOSX_DEPLOYMENT_TARGET=13.0 CGO_CFLAGS="-mmacosx-version-min=13.0" CGO_LDFLAGS="-mmacosx-version-min=13.0" go build -tags production -trimpath -ldflags "-s -w -X main.version={{.VERSION}}" -o bin/pr-nanny .
+      - sh scripts/check-production.sh bin/pr-nanny
+
+  test:
+    desc: Go race tests with the coverage floor, native adapter tests and frontend unit tests
+    cmds:
+      - sh scripts/coverage-go.sh
+      - go test -race ./cmd/...
+      - task: frontend:dist
       - go test -race -tags production .
+      - cd frontend && pnpm test
+
+  test:integration:
+    desc: Frontend browser tests against the mock bridge (Playwright Chromium)
+    cmds:
+      - task: frontend:install
+      - cd frontend && pnpm exec playwright install chromium && pnpm test:e2e
+
+  security:
+    desc: gitleaks, go mod verify, govulncheck, gosec and the frontend dependency audit
+    cmds:
+      - go run {{.GITLEAKS}} git --no-banner --redact .
+      - go mod verify
+      - task: frontend:dist
+      - go run {{.GOVULNCHECK}} ./...
+      - go -C tools/security build -o ../../.tools/gosec github.com/securego/gosec/v2/cmd/gosec
+      - .tools/gosec -quiet ./internal/... ./cmd/...
+      - .tools/gosec -quiet -tags production .
+      - cd frontend && pnpm audit --audit-level=low
+
+  tools:install:
+    internal: true
+    cmds:
+      - sh scripts/install-ci-tools.sh
 
   frontend:install:
     internal: true
     cmds:
       - cd frontend && pnpm install --frozen-lockfile
 
+  frontend:dist:
+    internal: true
+    deps: [frontend:install]
+    # Always rebuild: Playwright replaces frontend/dist with a fixture build.
+    cmds:
+      - cd frontend && pnpm build
+
+  # --- app-owned release tasks, called by reltool from release.json ---
   build:darwin-arm64:
     desc: Build, sign (when MACOS_SIGNING_IDENTITY is set) and package the macOS app zip
     cmds:
@@ -43,19 +112,6 @@ tasks:
         trap 'rm -rf "$smoke"' EXIT
         ditto -x -k "dist/pr-nanny-$RELEASE_VERSION-darwin-arm64.zip" "$smoke"
         "$smoke/PR Nanny.app/Contents/MacOS/pr-nanny" --smoke-test
-
-  build:linux-amd64:
-    desc: Build and package the Linux x64 archive (needs a Linux worker with GTK4 and WebKitGTK 6)
-    cmds:
-      - task: frontend:install
-      - sh scripts/package.sh "$RELEASE_VERSION" linux
-      - cp "dist/pr-nanny-$RELEASE_VERSION-linux-x64.tar.gz" "$RELEASE_OUT/"
-
-  validate:linux-amd64:
-    cmds:
-      - sh scripts/verify-package.sh dist
-      - sh scripts/check-production.sh bin/pr-nanny
-      - sh scripts/test-install-linux.sh "dist/pr-nanny-$RELEASE_VERSION-linux-x64.tar.gz"
 
   # --- release-tools consumer snippet (docs/consumer.md in release-tools) ---
   reltool:install:

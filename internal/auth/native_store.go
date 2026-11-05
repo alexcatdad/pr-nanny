@@ -2,8 +2,8 @@ package auth
 
 import "github.com/zalando/go-keyring"
 
-// NativeStore delegates secret storage to the macOS Keychain, Windows
-// Credential Manager, or Linux Secret Service. Errors never trigger fallback.
+// NativeStore delegates secret storage to the macOS Keychain. Errors never
+// trigger fallback.
 type NativeStore struct{}
 
 func (NativeStore) Get(service, account string) (string, error) {
