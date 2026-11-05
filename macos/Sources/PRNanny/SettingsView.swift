@@ -33,8 +33,9 @@ struct SettingsView: View {
         .frame(width: 460)
         .disabled(working || model.busy)
         .task {
-            permission = await model.notifier.permission()
             launchAtLogin = model.loginItemEnabled
+            // Live, so a change in System Settings updates the denied note while Settings is open.
+            for await current in model.notifier.permissionUpdates() { permission = current }
         }
     }
 
