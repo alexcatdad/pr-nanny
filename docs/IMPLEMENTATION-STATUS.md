@@ -1,5 +1,7 @@
 # Final qualification checkpoint
 
+> Historical record of the Wails v3 + Svelte release candidates (0.1.x). That app was replaced by the native Swift menu-bar app; frontend, webview and Wails measurements below no longer describe the shipped app.
+
 Updated: 2026-10-20. Working branch: `codex/app-tap-delivery`.
 
 ## Delivered and verified

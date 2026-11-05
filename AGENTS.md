@@ -2,16 +2,17 @@
 
 ## Purpose
 
-Passive GitHub.com pull-request monitor for one account: shows authored and review-requested PRs with approval and CI summaries, and raises local notifications. macOS menu-bar app (macOS 13+, Apple Silicon) with a Go backend in `cmd/pr-nanny-helper` and `internal/`. The current UI is a Wails v3 + Svelte app in the repository root and `frontend/`; a Swift app on `alexcatdad/menubar-kit` (bundle ID `com.alexcatdad.pr-nanny`) replaces it.
+Passive GitHub.com pull-request monitor for one account: shows authored and review-requested PRs with approval and CI summaries, and raises local notifications. Native Swift menu-bar app (macOS 13+, Apple Silicon; bundle ID `com.alexcatdad.pr-nanny`, `.dev` for development) on `alexcatdad/menubar-kit`, supervising a Go backend in `cmd/pr-nanny-helper` and `internal/`.
 
 ## Invariants
 
-- Passive monitor: never add a GitHub mutation, subscription change, telemetry, or frontend network/auth access.
+- Passive monitor: never add a GitHub mutation, subscription change, telemetry, or network/auth access from the Swift app (it talks only to the helper socket).
 - Secrets live only in Go and the macOS Keychain (go-keyring). No plaintext fallback, no secrets in snapshots, helper replies or logs, no raw upstream error logging.
-- Render API data as text. Validate GitHub PR URLs with `ValidPRURL` before opening them; the UI validates again.
+- Render API data as text (`Text(verbatim:)`). Validate GitHub PR URLs with `ValidPRURL` before opening them; the app validates again with `PRURL.isValid`.
+- The app reads cached snapshots only; only the user's Refresh action calls `refresh`. Respect the polling budget in `docs/API-COST.md`.
 - Notifications are gated in Go (global switch, event preference, bell; review requests bypass the bell). In the Swift app they are posted by the app bundle via MenubarKit: opt-in, permission requested from the user toggle, silent unless the user enables sound. Never `osascript`, `terminal-notifier` or a bare binary.
 - The helper socket is 0600 in the 0700 data directory, peer-UID checked, behind the single-instance lock; the helper exits with its parent.
-- Pin Wails v3.0.0-beta.33 while the Wails app exists. Production builds use `-tags production` and never include MCP or DevTools.
+- The bundled helper is built with `-tags production`; never add development tags, Wails or fixtures to it (`scripts/check-production.sh`).
 - Test with synthetic fixtures, never real credentials or the user's `gh` session.
 - No third-party dependencies in the shipped Swift app without a recorded decision. First-party `alexcatdad/menubar-kit` is allowed, pinned to an exact revision.
 
@@ -19,14 +20,15 @@ Passive GitHub.com pull-request monitor for one account: shows authored and revi
 
 - `cmd/pr-nanny-helper`, `internal/helper` — backend process and its socket API ([docs/HELPER-API.md](docs/HELPER-API.md)).
 - `internal/{app,core,github,auth,storage,notify,model}` — domain logic, no UI imports.
-- Root `*.go`, `frontend/`, `internal/websecurity` — Wails adapters and Svelte UI (being replaced).
+- `macos/` — Swift package: `PRNannyNative` (testable logic) and the thin `PRNanny` app target; `macos/Scripts` builds, validates and signs the bundle (helper first, app last).
 - `scripts/`, `build/` — packaging and verification. `site/` — product page (Pages). `docs/` — runbooks and evidence. User-facing product truth lives in `README.md`.
 
 ## Build & verify
 
 - `task check` — the full local gate: lint, build, test, test:integration, security. CI runs the same tasks.
 - `task lint`, `task build`, `task test`, `task test:integration`, `task security` — what CI calls (`alexcatdad/ci-actions` validate-pr/validate-main).
-- Toolchain: Go 1.27.3, Task 3, Node 24 + pnpm 11 (corepack) for `frontend/` and `site/`; Swift 6 on Xcode for macOS 26 once `macos/` exists.
+- `task dev:run` — build and launch `PR Nanny Dev.app` (own data directory `pr-nanny-dev`).
+- Toolchain: Go 1.27.3, Task 3, Swift 6 on Xcode (macOS 26); Node 24 + pnpm 11 only for `site/`.
 
 ## Release
 

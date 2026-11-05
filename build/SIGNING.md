@@ -17,10 +17,12 @@ are never committed or uploaded.
 ## Flow
 
 1. The `build:darwin-arm64` task builds the app and, because the release tool
-   provides `MACOS_SIGNING_IDENTITY`, `scripts/package.sh` signs the executable
-   and the app bundle with the hardened runtime and a secure timestamp
-   (`MACOS_ENTITLEMENTS` is passed when an entitlements file is configured; none
-   is today). Without the variable, for example in CI, the app is ad-hoc signed.
+   provides `MACOS_SIGNING_IDENTITY`, `macos/Scripts/package-app.sh` signs
+   `Contents/Helpers/pr-nanny-helper` first (identifier
+   `com.alexcatdad.pr-nanny.helper`) and the app bundle last, both with the
+   hardened runtime and a secure timestamp (`MACOS_ENTITLEMENTS` is passed for
+   the app when an entitlements file is configured; none is today). Without the
+   variable, for example in CI, both are ad-hoc signed.
 2. `reltool` verifies the signature, submits the zip with `notarytool`, waits,
    staples the app ticket and re-creates the zip. The recorded SHA-256 describes
    the final bytes.
