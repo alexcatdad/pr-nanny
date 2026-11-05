@@ -4,9 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"html"
-	"os"
-	"runtime"
 	"sync"
 
 	"github.com/alexcatdad/pr-nanny/internal/core"
@@ -15,16 +12,6 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 )
-
-// Wails beta.33 can position tray windows only through X11. Prefer XWayland
-// on mixed sessions, without overriding an explicit backend or requiring X11
-// on a desktop that only provides Wayland.
-func configureTrayDisplay() {
-	if runtime.GOOS == "linux" && os.Getenv("GDK_BACKEND") == "" &&
-		os.Getenv("DISPLAY") != "" && os.Getenv("WAYLAND_DISPLAY") != "" {
-		_ = os.Setenv("GDK_BACKEND", "x11,wayland")
-	}
-}
 
 type nativePlatform struct {
 	app           *application.App
@@ -126,17 +113,8 @@ func (p *nativePlatform) deliver(pr model.PullRequest, event core.Event) {
 	}
 	id := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%s:%s:%t", pr.ID, event, pr.UpdatedAt.String(), pr.CI, pr.Approved)))
 	if err := p.notifications.SendNotification(notifications.NotificationOptions{
-		ID: fmt.Sprintf("%x", id[:16]), Title: title, Subtitle: notificationText(fmt.Sprintf("%s #%d", pr.Repository, pr.Number), runtime.GOOS), Body: notificationText(pr.Title, runtime.GOOS),
+		ID: fmt.Sprintf("%x", id[:16]), Title: title, Subtitle: fmt.Sprintf("%s #%d", pr.Repository, pr.Number), Body: pr.Title,
 	}); err != nil {
 		p.warn("An OS notification could not be delivered. Check your desktop notification service and permissions.")
 	}
-}
-
-func notificationText(value, platform string) string {
-	// Freedesktop notification bodies support XML markup, links and images.
-	// Wails forwards Linux body/subtitle strings directly to the D-Bus daemon.
-	if platform == "linux" {
-		return html.EscapeString(value)
-	}
-	return value
 }

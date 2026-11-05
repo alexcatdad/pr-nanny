@@ -12,7 +12,7 @@ verify_build_tags() {
     echo "forbidden development build tag found in $binary" >&2; return 1
   fi
   case "$(uname -s):$name" in
-    Darwin:*-darwin-arm64.zip|Linux:*-linux-x64.tar.gz)
+    Darwin:*-darwin-arm64.zip)
       chmod u+x "$binary"
       actual=$("$binary" --version)
       case "$actual" in "PR Nanny $VERSION ("*")") ;; *) echo 'Runtime version does not match VERSION' >&2; return 1;; esac
@@ -37,12 +37,6 @@ for checksum in "$DIST"/*.sha256; do
     *-darwin-arm64.zip)
       listing=$(unzip -Z1 "$archive")
       ;;
-    *-windows-x64.zip)
-      listing=$(unzip -Z1 "$archive")
-      ;;
-    *-linux-x64.tar.gz)
-      listing=$(tar -tzf "$archive")
-      ;;
     *) echo "unrecognized release archive: $name" >&2; exit 1;;
   esac
   if printf '%s\n' "$listing" | grep -Eq '(^/|(^|/)\.\.(/|$)|\\\.\\.)'; then
@@ -65,29 +59,6 @@ for checksum in "$DIST"/*.sha256; do
       verify_build_tags "$temp/PR Nanny.app/Contents/MacOS/pr-nanny"
       rm -rf "$temp"
       trap - EXIT HUP INT TERM
-      ;;
-    *-windows-x64.zip)
-      printf '%s\n' "$listing" | grep -qx 'pr-nanny.exe'
-      printf '%s\n' "$listing" | grep -qx 'LICENSE'
-      printf '%s\n' "$listing" | grep -qx 'README.txt'
-      temp=$(mktemp -d)
-      unzip -q "$archive" 'pr-nanny.exe' -d "$temp"
-      file "$temp/pr-nanny.exe" | grep -Eqi 'PE32\+.*x86-64|PE32\+.*x86_64'
-      verify_build_tags "$temp/pr-nanny.exe"
-      rm -rf "$temp"
-      ;;
-    *-linux-x64.tar.gz)
-      printf '%s\n' "$listing" | grep -Eq '^[^/]+/bin/pr-nanny$'
-      printf '%s\n' "$listing" | grep -Eq '^[^/]+/install.sh$'
-      printf '%s\n' "$listing" | grep -Eq '^[^/]+/uninstall.sh$'
-      printf '%s\n' "$listing" | grep -Eq '^[^/]+/share/applications/pr-nanny.desktop$'
-      printf '%s\n' "$listing" | grep -Eq '^[^/]+/LICENSE$'
-      temp=$(mktemp -d)
-      entry=$(printf '%s\n' "$listing" | grep -E '^[^/]+/bin/pr-nanny$')
-      tar -xOzf "$archive" "$entry" > "$temp/pr-nanny"
-      file "$temp/pr-nanny" | grep -Eq 'ELF 64-bit.*x86-64'
-      verify_build_tags "$temp/pr-nanny"
-      rm -rf "$temp"
       ;;
   esac
   found=1

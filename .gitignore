@@ -1,5 +1,4 @@
 /bin/
-/rsrc_windows_amd64.syso
 /dist/
 /coverage/
 /frontend/node_modules/
@@ -11,5 +10,4 @@
 *.log
 .DS_Store
 /gosec
-/gosec.exe
 /frontend/coverage/

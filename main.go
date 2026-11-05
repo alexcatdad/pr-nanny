@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"embed"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync/atomic"
@@ -18,7 +16,6 @@ import (
 
 	appcore "github.com/alexcatdad/pr-nanny/internal/app"
 	"github.com/alexcatdad/pr-nanny/internal/auth"
-	"github.com/alexcatdad/pr-nanny/internal/core"
 	ghapi "github.com/alexcatdad/pr-nanny/internal/github"
 	"github.com/alexcatdad/pr-nanny/internal/storage"
 	"github.com/alexcatdad/pr-nanny/internal/websecurity"
@@ -62,12 +59,7 @@ func main() {
 		fmt.Printf("PR Nanny %s (%s)\n", buildVersion(), commit)
 		return
 	}
-	desktopSmoke := len(os.Args) == 2 && os.Args[1] == "--desktop-smoke-test"
-	if desktopSmoke && (os.Getenv("GITHUB_ACTIONS") != "true" || runtime.GOOS == "darwin") {
-		// This probe changes only a disposable runner's synthetic desktop identity.
-		os.Exit(2)
-	}
-	smoke := desktopSmoke || len(os.Args) == 2 && os.Args[1] == "--smoke-test"
+	smoke := len(os.Args) == 2 && os.Args[1] == "--smoke-test"
 	preview := developmentPreview()
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -81,7 +73,6 @@ func main() {
 		}
 		defer os.RemoveAll(dataDir)
 	}
-	configureTrayDisplay()
 	native := &nativePlatform{notifications: notifications.New(), isolated: smoke || preview}
 	store := storage.New(dataDir)
 	// Preserve corrupted non-secret data and restart with a fresh baseline.
@@ -108,48 +99,15 @@ func main() {
 		controller.SetWarning("Invalid local data was preserved and reset. Review your Settings and PR bells.")
 	}
 	native.warning = controller.SetWarning
-	native.enabled = func(id string, event core.Event) bool {
-		snapshot, _ := controller.GetSnapshot()
-		s := snapshot.Settings
-		if !s.Notifications {
-			return false
-		}
-		known := false
-		for _, pr := range snapshot.PullRequests {
-			if pr.ID == id {
-				known = event == core.EventReviewRequested || pr.Bell
-				break
-			}
-		}
-		if !known {
-			return false
-		}
-		switch event {
-		case core.EventCI:
-			return s.Events.CI
-		case core.EventApproval:
-			return s.Events.Approval
-		case core.EventReviewRequested:
-			return s.Events.ReviewRequested
-		case core.EventMerged:
-			return s.Events.Merged
-		case core.EventClosed:
-			return s.Events.Closed
-		}
-		return false
-	}
+	native.enabled = controller.NotificationAllowed
 	service := &Service{controller: controller, native: native, smoke: smoke || preview, ready: make(chan struct{})}
 	var smokeReady atomic.Bool
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	if preview {
 		logger = previewLogger()
 	}
-	appName := "PR Nanny"
-	if desktopSmoke {
-		appName = fmt.Sprintf("PRNannySmoke%d", os.Getpid())
-	}
 	app := application.New(application.Options{
-		Name: appName, Description: "A passive GitHub pull-request monitor", Icon: appIcon,
+		Name: "PR Nanny", Description: "A passive GitHub pull-request monitor", Icon: appIcon,
 		Services: []application.Service{application.NewService(service)},
 		Logger:   logger,
 		Assets:   application.AssetOptions{Handler: application.AssetFileServerFS(assets), Middleware: websecurity.Middleware, DisableLogging: true},
@@ -167,42 +125,13 @@ func main() {
 	popup := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name: "popup", Title: "PR Nanny", Width: 440, Height: 600, Frameless: true, AlwaysOnTop: true, Hidden: !smoke,
 		HideOnEscape: true, HideOnFocusLost: !smoke && !preview, DisableResize: true, DevToolsEnabled: false, DefaultContextMenuDisabled: true,
-		Windows: application.WindowsWindow{HiddenOnTaskbar: true},
 	})
 	native.popup = popup
 	popup.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) { popup.Hide(); e.Cancel() })
 	tray := app.SystemTray.New()
 	tray.SetTooltip("PR Nanny")
-	if runtime.GOOS == "linux" {
-		// Wails beta.33 derives the StatusNotifierItem name and tooltip from
-		// its label; SetTooltip is not implemented by the Linux backend.
-		tray.SetLabel("PR Nanny")
-	}
-	if runtime.GOOS == "darwin" {
-		tray.SetTemplateIcon(trayIcon)
-	} else {
-		tray.SetIcon(appIcon)
-	}
+	tray.SetTemplateIcon(trayIcon)
 	tray.AttachWindow(popup).WindowOffset(5)
-	if runtime.GOOS == "linux" {
-		// The first tray activation positions the window before GTK maps it.
-		// KWin can replace that initial position, so apply it again on focus.
-		popup.OnWindowEvent(events.Common.WindowFocus, func(*application.WindowEvent) {
-			_ = tray.PositionWindow(popup, 5)
-		})
-		// WebKitGTK's media preference can disagree with KDE's portal setting.
-		// Keep system colors and light-dark() in sync with the native preference,
-		// including after Settings navigation reloads the document.
-		syncAppearance := func() {
-			scheme := "light"
-			if app.Env.IsDarkMode() {
-				scheme = "dark"
-			}
-			popup.ExecJS(fmt.Sprintf("document.documentElement.style.colorScheme = %q", scheme))
-		}
-		popup.OnWindowEvent(events.Common.WindowShow, func(*application.WindowEvent) { syncAppearance() })
-		app.Event.OnApplicationEvent(events.Linux.SystemThemeChanged, func(*application.ApplicationEvent) { syncAppearance() })
-	}
 	if smoke || preview {
 		app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) { popup.Show(); popup.Focus() })
 	}
@@ -216,24 +145,6 @@ func main() {
 		go func() {
 			select {
 			case <-service.ready:
-				if desktopSmoke {
-					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-					defer cancel()
-					result := make(chan error, 1)
-					go func() { result <- runDesktopSmoke(ctx, app, popup, tray, native.notifications) }()
-					select {
-					case err := <-result:
-						if err != nil {
-							fmt.Fprintln(os.Stderr, "Desktop smoke failed:", err)
-							app.Quit()
-							return
-						}
-					case <-ctx.Done():
-						fmt.Fprintln(os.Stderr, "Desktop smoke timed out")
-						app.Quit()
-						return
-					}
-				}
 				smokeReady.Store(true)
 				time.Sleep(500 * time.Millisecond)
 			case <-time.After(75 * time.Second):

@@ -44,19 +44,6 @@ tasks:
         ditto -x -k "dist/pr-nanny-$RELEASE_VERSION-darwin-arm64.zip" "$smoke"
         "$smoke/PR Nanny.app/Contents/MacOS/pr-nanny" --smoke-test
 
-  build:linux-amd64:
-    desc: Build and package the Linux x64 archive (needs a Linux worker with GTK4 and WebKitGTK 6)
-    cmds:
-      - task: frontend:install
-      - sh scripts/package.sh "$RELEASE_VERSION" linux
-      - cp "dist/pr-nanny-$RELEASE_VERSION-linux-x64.tar.gz" "$RELEASE_OUT/"
-
-  validate:linux-amd64:
-    cmds:
-      - sh scripts/verify-package.sh dist
-      - sh scripts/check-production.sh bin/pr-nanny
-      - sh scripts/test-install-linux.sh "dist/pr-nanny-$RELEASE_VERSION-linux-x64.tar.gz"
-
   # --- release-tools consumer snippet (docs/consumer.md in release-tools) ---
   reltool:install:
     internal: true

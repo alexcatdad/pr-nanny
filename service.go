@@ -52,8 +52,17 @@ func (s *Service) Refresh() error {
 	}
 	return s.controller.Refresh()
 }
-func (s *Service) OpenPR(id string) error { return s.controller.OpenPR(id) }
-func (s *Service) HidePopup()             { s.controller.HidePopup() }
+func (s *Service) OpenPR(id string) error {
+	url, err := s.controller.ResolvePR(id)
+	if err != nil {
+		return err
+	}
+	if s.native.OpenURL(url) != nil {
+		return appcore.ErrUnavailable
+	}
+	return nil
+}
+func (s *Service) HidePopup() { s.native.HidePopup() }
 func (s *Service) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
 	if !s.smoke {
 		s.native.startNotifications(ctx, options)

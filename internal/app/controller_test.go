@@ -130,10 +130,7 @@ func (f *testFetcher) Fetch(ctx context.Context, _, _ string, _ []string) (model
 type testPlatform struct {
 	mu        sync.Mutex
 	autostart []bool
-	open      []string
-	openErr   error
 	autoErr   error
-	hides     int
 }
 
 func (p *testPlatform) SetAutostart(v bool) error {
@@ -141,17 +138,6 @@ func (p *testPlatform) SetAutostart(v bool) error {
 	defer p.mu.Unlock()
 	p.autostart = append(p.autostart, v)
 	return p.autoErr
-}
-func (p *testPlatform) OpenURL(v string) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.open = append(p.open, v)
-	return p.openErr
-}
-func (p *testPlatform) HidePopup() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.hides++
 }
 
 func newController(t *testing.T, settings model.Settings, store *testStore, auth *testAuth, fetcher *testFetcher, platform *testPlatform) *Controller {
@@ -165,7 +151,11 @@ func newController(t *testing.T, settings model.Settings, store *testStore, auth
 	if fetcher == nil {
 		fetcher = &testFetcher{}
 	}
-	c, err := New(store, auth, fetcher, nil, platform)
+	var autostart Autostart
+	if platform != nil {
+		autostart = platform
+	}
+	c, err := New(store, auth, fetcher, nil, autostart)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,26 +252,40 @@ func TestAutostartRollsBackWhenSettingsPersistenceFails(t *testing.T) {
 	}
 }
 
-func TestOpenPRRequiresKnownIDAndOpensCanonicalURL(t *testing.T) {
+func TestResolvePRRequiresKnownIDAndCanonicalURL(t *testing.T) {
 	s := baseSettings()
 	p := model.PullRequest{ID: "PR_1", URL: "https://github.com/acme/project/pull/12", Title: "<img src=x>", CI: model.CIPassed, Authored: true}
-	f := &testFetcher{result: model.FetchResult{PullRequests: []model.PullRequest{p}}}
-	platform := &testPlatform{}
-	c := newController(t, s, nil, nil, f, platform)
-	if err := c.OpenPR(p.ID); !errors.Is(err, ErrUnavailable) {
+	bad := model.PullRequest{ID: "PR_2", URL: "https://github.com.evil.invalid/acme/project/pull/13", CI: model.CIPassed, Authored: true}
+	f := &testFetcher{result: model.FetchResult{PullRequests: []model.PullRequest{p, bad}}}
+	c := newController(t, s, nil, nil, f, nil)
+	if _, err := c.ResolvePR(p.ID); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("unknown PR error = %v", err)
 	}
 	if err := c.Refresh(); err != nil {
 		t.Fatal(err)
 	}
 	waitForPR(t, c, p.ID)
-	if err := c.OpenPR(p.ID); err != nil {
-		t.Fatal(err)
+	if url, err := c.ResolvePR(p.ID); err != nil || url != "https://github.com/acme/project/pull/12" {
+		t.Fatalf("ResolvePR = %q, %v", url, err)
 	}
-	platform.mu.Lock()
-	defer platform.mu.Unlock()
-	if fmt.Sprint(platform.open) != "[https://github.com/acme/project/pull/12]" {
-		t.Fatalf("opened URLs = %v", platform.open)
+	if url, err := c.ResolvePR(bad.ID); !errors.Is(err, ErrUnavailable) || url != "" {
+		t.Fatalf("non-canonical PR resolved: %q, %v", url, err)
+	}
+}
+
+func TestSaveSettingsWithoutAutostartOnlyPersistsPreference(t *testing.T) {
+	s := baseSettings()
+	store := &testStore{settings: s}
+	c := newController(t, s, store, nil, nil, nil)
+	next := s
+	next.LaunchAtLogin = !s.LaunchAtLogin
+	snapshot, err := c.SaveSettings(next)
+	if err != nil || snapshot.Settings.LaunchAtLogin != next.LaunchAtLogin {
+		t.Fatalf("SaveSettings = %+v, %v", snapshot.Settings, err)
+	}
+	c.ApplyStartup()
+	if got, _ := c.GetSnapshot(); strings.Contains(got.Message, "Launch at login") {
+		t.Fatalf("nil autostart produced a warning: %q", got.Message)
 	}
 }
 
@@ -431,11 +435,10 @@ func TestSettingsActionsPersistAndSurfacePlatformWarnings(t *testing.T) {
 	if err != nil || !strings.Contains(snapshot.Message, "Safe local warning") || strings.Contains(snapshot.Message, "private platform diagnostics") {
 		t.Fatalf("warning was not safely included in snapshot: %q, %v", snapshot.Message, err)
 	}
-	c.HidePopup()
 	platform.mu.Lock()
 	defer platform.mu.Unlock()
-	if fmt.Sprint(platform.autostart) != "[false]" || platform.hides != 1 {
-		t.Fatalf("platform calls: autostart=%v hides=%d", platform.autostart, platform.hides)
+	if fmt.Sprint(platform.autostart) != "[false]" {
+		t.Fatalf("autostart calls = %v", platform.autostart)
 	}
 }
 

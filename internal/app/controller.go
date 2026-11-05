@@ -1,4 +1,5 @@
-// Package app implements the narrow, non-secret UI operations independently of Wails.
+// Package app implements the narrow, non-secret UI operations independently of
+// any user interface. Opening URLs and showing windows belong to the UI process.
 package app
 
 import (
@@ -14,10 +15,11 @@ import (
 )
 
 var (
-	ErrSettings       = errors.New("Unable to save settings. Check local storage and try again.")
-	ErrAuthentication = errors.New("Unable to connect to GitHub. Check authentication in Settings.")
-	ErrUnavailable    = errors.New("That pull request is no longer available. Refresh and try again.")
-	ErrAutostart      = errors.New("Unable to change launch at login. Check your operating system settings.")
+	ErrSettings        = errors.New("Unable to save settings. Check local storage and try again.")
+	ErrAuthentication  = errors.New("Unable to connect to GitHub. Check authentication in Settings.")
+	ErrUnavailable     = errors.New("That pull request is no longer available. Refresh and try again.")
+	ErrAutostart       = errors.New("Unable to change launch at login. Check your operating system settings.")
+	ErrCredentialStore = errors.New("Native credential storage is unavailable. Unlock your credential store and try again.")
 )
 
 type Auth interface {
@@ -31,10 +33,11 @@ type Preferences interface {
 	Settings() (model.Settings, error)
 	SaveSettings(model.Settings) error
 }
-type Platform interface {
+
+// Autostart applies launch-at-login in UIs that delegate it to Go. A nil
+// Autostart only persists the preference; the UI process then owns it.
+type Autostart interface {
 	SetAutostart(bool) error
-	OpenURL(string) error
-	HidePopup()
 }
 type Controller struct {
 	mu         sync.Mutex
@@ -43,13 +46,13 @@ type Controller struct {
 	store      Preferences
 	auth       Auth
 	monitor    *core.Monitor
-	platform   Platform
+	autostart  Autostart
 	ctx        context.Context
 	cancel     context.CancelFunc
 	warning    string
 }
 
-func New(store Preferences, credentials Auth, fetcher core.Fetcher, notifier core.Notifier, platform Platform) (*Controller, error) {
+func New(store Preferences, credentials Auth, fetcher core.Fetcher, notifier core.Notifier, autostart Autostart) (*Controller, error) {
 	settings, err := store.Settings()
 	if err != nil {
 		return nil, err
@@ -58,7 +61,7 @@ func New(store Preferences, credentials Auth, fetcher core.Fetcher, notifier cor
 		return nil, storage.ErrCorrupt
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &Controller{settings: settings, store: store, auth: credentials, platform: platform, ctx: ctx, cancel: cancel}
+	c := &Controller{settings: settings, store: store, auth: credentials, autostart: autostart, ctx: ctx, cancel: cancel}
 	monitor, err := core.New(fetcher, c.credentials, store, notifier, settings)
 	if err != nil {
 		cancel()
@@ -107,14 +110,14 @@ func (c *Controller) SaveSettings(next model.Settings) (model.Snapshot, error) {
 	if !ValidSettings(next) || next.AuthMethod != old.AuthMethod || next.Account != old.Account {
 		return model.Snapshot{}, ErrSettings
 	}
-	if next.LaunchAtLogin != old.LaunchAtLogin && c.platform != nil {
-		if err := c.platform.SetAutostart(next.LaunchAtLogin); err != nil {
+	if next.LaunchAtLogin != old.LaunchAtLogin && c.autostart != nil {
+		if err := c.autostart.SetAutostart(next.LaunchAtLogin); err != nil {
 			return model.Snapshot{}, ErrAutostart
 		}
 	}
 	if err := c.commitSettings(next); err != nil {
-		if next.LaunchAtLogin != old.LaunchAtLogin && c.platform != nil {
-			_ = c.platform.SetAutostart(old.LaunchAtLogin)
+		if next.LaunchAtLogin != old.LaunchAtLogin && c.autostart != nil {
+			_ = c.autostart.SetAutostart(old.LaunchAtLogin)
 		}
 		return model.Snapshot{}, err
 	}
@@ -209,31 +212,60 @@ func (c *Controller) Refresh() error {
 	go func() { _ = c.monitor.Refresh(c.ctx) }()
 	return nil
 }
-func (c *Controller) OpenPR(id string) error {
+
+// ResolvePR returns the canonical GitHub.com URL of a currently listed pull
+// request. Callers open it themselves; unknown IDs and non-canonical URLs fail.
+func (c *Controller) ResolvePR(id string) (string, error) {
 	snapshot, _ := c.GetSnapshot()
 	for _, pr := range snapshot.PullRequests {
 		if pr.ID == id {
-			if !ValidPRURL(pr.URL) || c.platform == nil {
-				return ErrUnavailable
+			if !ValidPRURL(pr.URL) {
+				return "", ErrUnavailable
 			}
-			if err := c.platform.OpenURL(pr.URL); err != nil {
-				return ErrUnavailable
-			}
-			return nil
+			return pr.URL, nil
 		}
 	}
-	return ErrUnavailable
+	return "", ErrUnavailable
 }
-func (c *Controller) HidePopup() {
-	if c.platform != nil {
-		c.platform.HidePopup()
+
+// NotificationAllowed applies the user's gating at delivery time: the global
+// switch, then the per-event preference, then the PR's bell. Review requests
+// bypass the bell; PRs no longer listed never notify.
+func (c *Controller) NotificationAllowed(id string, event core.Event) bool {
+	snapshot, _ := c.GetSnapshot()
+	s := snapshot.Settings
+	if !s.Notifications {
+		return false
 	}
+	known := false
+	for _, pr := range snapshot.PullRequests {
+		if pr.ID == id {
+			known = event == core.EventReviewRequested || pr.Bell
+			break
+		}
+	}
+	if !known {
+		return false
+	}
+	switch event {
+	case core.EventCI:
+		return s.Events.CI
+	case core.EventApproval:
+		return s.Events.Approval
+	case core.EventReviewRequested:
+		return s.Events.ReviewRequested
+	case core.EventMerged:
+		return s.Events.Merged
+	case core.EventClosed:
+		return s.Events.Closed
+	}
+	return false
 }
 func (c *Controller) ApplyStartup() {
-	if c.platform == nil {
+	if c.autostart == nil {
 		return
 	}
-	if err := c.platform.SetAutostart(c.current().LaunchAtLogin); err != nil {
+	if err := c.autostart.SetAutostart(c.current().LaunchAtLogin); err != nil {
 		c.mu.Lock()
 		c.warning = "Launch at login could not be configured; check Settings"
 		c.mu.Unlock()
@@ -254,7 +286,7 @@ func classifyAuth(err error) error {
 }
 func safeAuthError(err error) error {
 	if errors.Is(err, auth.ErrCredentialStore) {
-		return errors.New("Native credential storage is unavailable. Unlock your credential store and try again.")
+		return ErrCredentialStore
 	}
 	return ErrAuthentication
 }
