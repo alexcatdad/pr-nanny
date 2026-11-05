@@ -47,7 +47,7 @@ sh scripts/verify-package.sh dist
 
 ## CI
 
-`.github/workflows/validation.yml` calls `alexcatdad/ci-actions` (pinned to a commit SHA) on `macos-26`: pull requests run `pr / leaks`, `pr / lint`, `pr / build` and `pr / deps`; pushes to main and a weekly schedule run `main / test`, `main / security` and the integration task; CodeQL analyzes Go and Swift (`swift build --package-path macos`). Commands are the Task targets above, run through a pinned `go run` of go-task because the runner image has no Task binary. CI validates only: it never builds release artifacts, signs, publishes, tags or updates the tap. `pages.yml` builds and deploys the site.
+`.github/workflows/validation.yml` calls `alexcatdad/ci-actions` (pinned to a commit SHA) on `macos-26`: pull requests run `pr / leaks`, `pr / lint`, `pr / build` and `pr / deps`; pushes to main and a weekly schedule run `main / test`, `main / security` and the integration task; CodeQL analyzes Go, Swift (`swift build --package-path macos`) and the JavaScript/TypeScript in `site/`. Commands are the Task targets above, run through a pinned `go run` of go-task because the runner image has no Task binary. CI validates only: it never builds release artifacts, signs, publishes, tags or updates the tap. `pages.yml` builds and deploys the site.
 
 The application has no telemetry, GitHub mutations, subscription changes, remote code, or plaintext credential fallback. Keep OS permissions minimal and redact upstream errors.
 

@@ -17,7 +17,7 @@ All notable changes are recorded here. The format follows
 
 - **Bundle ID is now `com.alexcatdad.pr-nanny`** (was `io.github.alexcatdad.pr-nanny`). After upgrading, reconnect GitHub in Settings, turn notifications on again (macOS asks for permission once more), and re-enable Launch at login. Settings, layout and bells carry over.
 - Notifications are off until you turn on **Allow notifications**, and silent unless you turn on sound.
-- CodeQL analyzes Go and Swift.
+- CodeQL analyzes Go, Swift and the JavaScript/TypeScript in `site/`.
 - CI validates through `alexcatdad/ci-actions` on macOS; `task check` runs every gate locally.
 
 ### Removed

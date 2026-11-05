@@ -14,7 +14,7 @@ Storage uses a 0700 directory and 0600 files. One process owns that directory at
 
 Required CI gates (`pr / leaks`, `pr / lint`, `pr / build`, `pr / deps`, `codeql`) run through `alexcatdad/ci-actions`; main runs race tests, Swift tests, the bundle smoke test, gitleaks, govulncheck and gosec. Releases are local only (see CONTRIBUTING.md). Passing these automated checks does not establish complete desktop behavior or absence of vulnerabilities.
 
-The quality toolchain also scans source history with Gitleaks, workflows with zizmor, and Go/Swift with CodeQL. Gitleaks excludes one exact historical fingerprint for a synthetic test token; no secret detector or application path is disabled. Native main builds generate artifact attestations, and publication verifies the archive digests, source commit and qualification workflow identity. Release tags reject updates/deletion and new releases use GitHub's immutable-release protection. These provenance controls establish origin and qualification, not Developer ID/Authenticode signing.
+The quality toolchain also scans source history with Gitleaks, workflows with zizmor, and Go, Swift and site JavaScript/TypeScript with CodeQL. Gitleaks excludes one exact historical fingerprint for a synthetic test token; no secret detector or application path is disabled. Native main builds generate artifact attestations, and publication verifies the archive digests, source commit and qualification workflow identity. Release tags reject updates/deletion and new releases use GitHub's immutable-release protection. These provenance controls establish origin and qualification, not Developer ID/Authenticode signing.
 
 ## Native UI
 

@@ -41,5 +41,5 @@ jobs:
       security-events: write
     uses: alexcatdad/ci-actions/.github/workflows/codeql.yml@ce30691e2ef9fe853025173069f6fa323907e053
     with:
-      languages: '["go", "swift"]'
+      languages: '["go", "swift", "javascript-typescript"]'
       swift-build-command: swift build --package-path macos
