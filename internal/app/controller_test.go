@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/alexcatdad/pr-nanny/internal/auth"
+	"github.com/alexcatdad/pr-nanny/internal/core"
 	"github.com/alexcatdad/pr-nanny/internal/model"
 	"github.com/alexcatdad/pr-nanny/internal/storage"
 )
@@ -489,4 +490,50 @@ func TestCredentialFailuresKeepCategoriesAndHideRawDetails(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "Native credential storage is unavailable") || strings.Contains(err.Error(), "secure credential storage is unavailable") {
 		t.Fatalf("vault error was not mapped to safe recovery guidance: %v", err)
 	}
+}
+
+func TestNotificationAllowedAppliesGlobalEventAndBellGating(t *testing.T) {
+	s := baseSettings()
+	now := time.Now()
+	prs := []model.PullRequest{
+		{ID: "PR_BELL", Number: 1, Repository: "acme/project", URL: "https://github.com/acme/project/pull/1", CreatedAt: now, UpdatedAt: now, Authored: true},
+		{ID: "PR_QUIET", Number: 2, Repository: "acme/project", URL: "https://github.com/acme/project/pull/2", CreatedAt: now, UpdatedAt: now, Authored: true},
+	}
+	c := newController(t, s, nil, nil, &testFetcher{result: model.FetchResult{PullRequests: prs}}, nil)
+	if err := c.Refresh(); err != nil {
+		t.Fatal(err)
+	}
+	waitForPR(t, c, "PR_QUIET")
+	if _, err := c.SetBell("PR_BELL", true); err != nil {
+		t.Fatal(err)
+	}
+	check := func(label, id string, event core.Event, want bool) {
+		t.Helper()
+		if got := c.NotificationAllowed(id, event); got != want {
+			t.Errorf("%s: NotificationAllowed(%s, %s) = %t, want %t", label, id, event, got, want)
+		}
+	}
+	for _, event := range []core.Event{core.EventCI, core.EventApproval, core.EventMerged, core.EventClosed} {
+		check("bell on", "PR_BELL", event, true)
+		check("bell off", "PR_QUIET", event, false)
+	}
+	check("review requests bypass the bell", "PR_QUIET", core.EventReviewRequested, true)
+	check("unlisted PR", "PR_GONE", core.EventReviewRequested, false)
+	check("unknown event", "PR_BELL", core.Event("unknown"), false)
+
+	next := c.current()
+	next.Events.CI = false
+	next.Events.ReviewRequested = false
+	if _, err := c.SaveSettings(next); err != nil {
+		t.Fatal(err)
+	}
+	check("event disabled", "PR_BELL", core.EventCI, false)
+	check("review event disabled", "PR_QUIET", core.EventReviewRequested, false)
+	check("other events stay on", "PR_BELL", core.EventMerged, true)
+
+	next.Notifications = false
+	if _, err := c.SaveSettings(next); err != nil {
+		t.Fatal(err)
+	}
+	check("global switch off", "PR_BELL", core.EventMerged, false)
 }

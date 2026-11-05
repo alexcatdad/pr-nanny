@@ -1,3 +1,5 @@
+//go:build darwin
+
 package main
 
 import (
@@ -66,6 +68,14 @@ func main() {
 		os.Exit(1)
 	}
 	dataDir := filepath.Join(configDir, "pr-nanny")
+	if !smoke && !preview {
+		// Shares the helper's lock: one process owns settings and state.
+		lock, err := storage.LockInstance(dataDir)
+		if err != nil {
+			os.Exit(1)
+		}
+		defer lock.Close()
+	}
 	if smoke || preview {
 		dataDir, err = os.MkdirTemp("", "pr-nanny-smoke-")
 		if err != nil {

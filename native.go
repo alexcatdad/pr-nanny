@@ -1,8 +1,9 @@
+//go:build darwin
+
 package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"sync"
 
@@ -107,13 +108,12 @@ func (p *nativePlatform) deliver(pr model.PullRequest, event core.Event) {
 	if p.enabled != nil && !p.enabled(pr.ID, event) {
 		return
 	}
-	title := map[core.Event]string{core.EventCI: "CI status changed", core.EventApproval: "Approval status changed", core.EventReviewRequested: "Review requested", core.EventMerged: "Pull request merged", core.EventClosed: "Pull request closed"}[event]
+	title := notify.Title(event)
 	if title == "" {
 		return
 	}
-	id := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%s:%s:%t", pr.ID, event, pr.UpdatedAt.String(), pr.CI, pr.Approved)))
 	if err := p.notifications.SendNotification(notifications.NotificationOptions{
-		ID: fmt.Sprintf("%x", id[:16]), Title: title, Subtitle: fmt.Sprintf("%s #%d", pr.Repository, pr.Number), Body: pr.Title,
+		ID: notify.DedupeID(pr, event), Title: title, Subtitle: fmt.Sprintf("%s #%d", pr.Repository, pr.Number), Body: pr.Title,
 	}); err != nil {
 		p.warn("An OS notification could not be delivered. Check your desktop notification service and permissions.")
 	}

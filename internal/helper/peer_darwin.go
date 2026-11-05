@@ -1,0 +1,26 @@
+package helper
+
+import (
+	"net"
+	"os"
+
+	"golang.org/x/sys/unix"
+)
+
+// authorizedPeer accepts only connections from processes of the current user.
+func authorizedPeer(conn *net.UnixConn) bool {
+	raw, err := conn.SyscallConn()
+	if err != nil {
+		return false
+	}
+	uid := -1
+	if err = raw.Control(func(fd uintptr) {
+		cred, e := unix.GetsockoptXucred(int(fd), unix.SOL_LOCAL, unix.LOCAL_PEERCRED)
+		if e == nil {
+			uid = int(cred.Uid)
+		}
+	}); err != nil {
+		return false
+	}
+	return uid == os.Getuid()
+}
