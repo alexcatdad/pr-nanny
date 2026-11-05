@@ -1,5 +1,6 @@
 import MenubarKit
 import Testing
+import UserNotifications
 
 @testable import PRNannyNative
 
@@ -54,8 +55,19 @@ import Testing
     #expect(notification.identifier == entry.id)
     #expect(notification.threadIdentifier == "PR_fixture")
     #expect(notification.title == "Pull request merged")
-    #expect(notification.body == "sample/repo #42\nFixture title")
+    #expect(notification.subtitle == "sample/repo #42")
+    #expect(notification.body == "Fixture title")
+    #expect(notification.userInfo == ["prId": "PR_fixture"])
     var bare = entry
     bare.subtitle = ""
-    #expect(NotificationMapping.notification(for: bare).body == "Fixture title")
+    #expect(NotificationMapping.notification(for: bare).subtitle == nil)
+}
+
+@Test func routesClicksToThePullRequest() {
+    #expect(NotificationMapping.prID(for: NotificationClick(identifier: "x", userInfo: ["prId": "PR_a"])) == "PR_a")
+    #expect(NotificationMapping.prID(for: NotificationClick(identifier: "x", threadIdentifier: "PR_b")) == "PR_b")
+    #expect(NotificationMapping.prID(for: NotificationClick(identifier: "x")) == nil)
+    let dismissed = NotificationClick(
+        identifier: "x", userInfo: ["prId": "PR_a"], actionIdentifier: UNNotificationDismissActionIdentifier)
+    #expect(NotificationMapping.prID(for: dismissed) == nil)
 }

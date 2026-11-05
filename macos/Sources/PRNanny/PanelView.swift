@@ -18,28 +18,20 @@ struct PanelView: View {
             }
             content
             MenuSection(quitTitle: "Quit PR Nanny", quitHelp: "Stops monitoring until you open PR Nanny again.") {
-                OpenSettingsButton(title: "Settings…")
+                OpenSettingsButton("Settings…")
             }
             VersionFooter()
         }
     }
 
     private var header: some View {
-        HStack(alignment: .center) {
-            StatusHeader(model.status)
-            Spacer(minLength: 4)
+        StatusHeader(model.status) {
             if model.helper == .running, model.snapshot != nil {
-                Button {
+                RefreshButton(
+                    isRefreshing: model.busy || model.snapshot?.refreshing == true, title: "Refresh pull requests"
+                ) {
                     model.refresh()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .rotationEffect(.degrees(model.busy || model.snapshot?.refreshing == true ? 180 : 0))
-                        .animation(.easeInOut(duration: 0.6), value: model.snapshot?.refreshing)
                 }
-                .buttonStyle(.borderless)
-                .disabled(model.busy)
-                .help("Refresh")
-                .accessibilityLabel("Refresh pull requests")
             }
         }
     }
@@ -78,7 +70,7 @@ struct PanelView: View {
             )
             .font(.callout).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
-            OpenSettingsButton(title: "Open Settings").buttonStyle(ProminentButtonStyle(fullWidth: true))
+            OpenSettingsButton("Open Settings").buttonStyle(ProminentButtonStyle(fullWidth: true))
         }
         .padding(12)
         .groupedTile()

@@ -2,7 +2,6 @@ import AppKit
 import MenubarKit
 import PRNannyNative
 import SwiftUI
-import UserNotifications
 
 struct PRNannyApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
@@ -40,61 +39,20 @@ struct TrayLabelView: View {
 /// Starts the helper at launch, stops it at quit, and opens the pull request
 /// when the user clicks one of its notifications.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
+    // Kept alive here: the notification center holds its delegate weakly.
+    private lazy var responder = MenubarNotificationResponder(presentInForeground: false) { [weak self] click in
+        guard let prID = NotificationMapping.prID(for: click) else { return }
+        self?.model.open(prID: prID)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        UNUserNotificationCenter.current().delegate = self
+        responder.install()
         model.start()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         model.stop()
-    }
-
-    nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
-    ) async {
-        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
-        // The thread identifier is the PR node ID; the helper resolves it to a validated URL.
-        let prID = response.notification.request.content.threadIdentifier
-        guard !prID.isEmpty else { return }
-        await MainActor.run { model.open(prID: prID) }
-    }
-
-    nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter, willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
-        [.banner, .list]
-    }
-}
-
-/// A panel row that opens the Settings scene and brings it in front: a
-/// menu-bar app is never active on its own.
-struct OpenSettingsButton: View {
-    let title: String
-
-    var body: some View {
-        if #available(macOS 14, *) {
-            ModernOpenSettingsButton(title: title)
-        } else {
-            Button(title) {
-                NSApp.activate(ignoringOtherApps: true)
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-            }
-        }
-    }
-}
-
-@available(macOS 14, *)
-private struct ModernOpenSettingsButton: View {
-    let title: String
-    @Environment(\.openSettings) private var openSettings
-
-    var body: some View {
-        Button(title) {
-            NSApp.activate(ignoringOtherApps: true)
-            openSettings()
-        }
     }
 }

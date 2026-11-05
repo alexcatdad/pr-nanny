@@ -1,5 +1,6 @@
 import Foundation
 import MenubarKit
+import UserNotifications
 
 /// Refresh intervals the helper accepts (storage.validateSettings).
 public struct RefreshInterval: Identifiable, Equatable, Sendable {
@@ -75,11 +76,22 @@ public enum SettingsRules {
     }
 }
 
-/// Maps a helper notification to what MenubarKit posts. The PR node ID is the
-/// thread identifier, so a click can resolve the PR even after a relaunch.
+/// Maps a helper notification to what MenubarKit posts. The dedupe ID is the
+/// identifier, the PR node ID travels in `userInfo` (so a click can resolve the
+/// PR even after a relaunch) and groups the PR's notifications in one thread.
 public enum NotificationMapping {
+    public static let prIDKey = "prId"
+
     public static func notification(for entry: HelperNotification) -> MenubarNotification {
-        let body = entry.subtitle.isEmpty ? entry.body : "\(entry.subtitle)\n\(entry.body)"
-        return MenubarNotification(title: entry.title, body: body, threadIdentifier: entry.prId, identifier: entry.id)
+        MenubarNotification(
+            title: entry.title, subtitle: entry.subtitle.isEmpty ? nil : entry.subtitle, body: entry.body,
+            threadIdentifier: entry.prId, identifier: entry.id, userInfo: [prIDKey: entry.prId])
+    }
+
+    /// The PR to open for a click, or nil for a dismissal or a foreign notification.
+    public static func prID(for click: NotificationClick) -> String? {
+        guard !click.isDismissal, click.actionIdentifier == UNNotificationDefaultActionIdentifier else { return nil }
+        let id = click.userInfo[prIDKey] ?? click.threadIdentifier ?? ""
+        return id.isEmpty ? nil : id
     }
 }
