@@ -6,6 +6,8 @@ Keep PR Nanny a lightweight, single-account, read-only GitHub.com monitor. Start
 
 Use Go 1.27.3 (`go.mod`), Xcode with Swift 6 (`swift format` ships with it), and [Task](https://taskfile.dev) 3 on an Apple Silicon Mac. The Swift package in `macos/` depends only on first-party [`alexcatdad/menubar-kit`](https://github.com/alexcatdad/menubar-kit), pinned by commit in `macos/Package.swift` (SwiftPM cannot resolve its four-part CalVer tags). PR Nanny is macOS-only; `site/` alone uses Node and pnpm.
 
+Go backend work also runs in the devcontainer / GitHub Codespaces (Linux; no Swift).
+
 ## Local checks
 
 ```sh
