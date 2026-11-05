@@ -19,7 +19,7 @@ vars:
 tasks:
   # --- local gate; CI runs the same tasks ---
   check:
-    desc: Everything CI runs - lint, build, tests (incl. browser e2e) and security scans
+    desc: Everything CI runs - lint, build, tests (incl. the bundle smoke test) and security scans
     cmds:
       - task: lint
       - task: build
@@ -28,90 +28,79 @@ tasks:
       - task: security
 
   lint:
-    desc: Formatting, go vet, golangci-lint, shellcheck, actionlint, zizmor and frontend lint/type check
+    desc: gofmt, go vet, golangci-lint, swift-format, shellcheck, actionlint and zizmor
     cmds:
       - task: tools:install
       - test -z "$(git ls-files '*.go' | xargs gofmt -l)" || { git ls-files '*.go' | xargs gofmt -l; echo 'Run gofmt on the files above' >&2; exit 1; }
-      - go vet ./internal/... ./cmd/...
-      - task: frontend:dist
-      - go vet -tags production .
+      - go vet ./...
       - go -C tools/lint build -o ../../.tools/golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint
-      - .tools/golangci-lint run --config .golangci.yml ./internal/... ./cmd/...
-      - .tools/shellcheck scripts/*.sh
+      - .tools/golangci-lint run --config .golangci.yml ./...
+      - swift format lint --strict --recursive macos/Package.swift macos/Sources macos/Tests
+      - .tools/shellcheck scripts/*.sh macos/Scripts/*.sh
       - PATH="$PWD/.tools:$PATH" go run {{.ACTIONLINT}} -pyflakes=
       - .tools/zizmor --offline --no-progress --min-severity low .github/workflows
-      - cd frontend && pnpm lint && pnpm check
 
   build:
-    desc: Build the production helper and the production Wails app
+    desc: Build the production helper and the Swift app and tests with warnings as errors
     cmds:
-      - task: frontend:dist
       - mkdir -p bin
       - CGO_ENABLED=0 go build -tags production -trimpath -ldflags "-s -w -X main.version={{.VERSION}}" -o bin/pr-nanny-helper ./cmd/pr-nanny-helper
-      - MACOSX_DEPLOYMENT_TARGET=13.0 CGO_CFLAGS="-mmacosx-version-min=13.0" CGO_LDFLAGS="-mmacosx-version-min=13.0" go build -tags production -trimpath -ldflags "-s -w -X main.version={{.VERSION}}" -o bin/pr-nanny .
-      - sh scripts/check-production.sh bin/pr-nanny
+      - sh scripts/check-production.sh bin/pr-nanny-helper
+      - swift build --package-path macos --build-tests -Xswiftc -warnings-as-errors
 
   test:
-    desc: Go race tests with the coverage floor, native adapter tests and frontend unit tests
+    desc: Go race tests with the coverage floor and the Swift tests
     cmds:
       - sh scripts/coverage-go.sh
       - go test -race ./cmd/...
-      - task: frontend:dist
-      - go test -race -tags production .
-      - cd frontend && pnpm test
+      - swift test --package-path macos
 
   test:integration:
-    desc: Frontend browser tests against the mock bridge (Playwright Chromium)
+    desc: Build the dev bundle, validate it and run its headless smoke test against the bundled helper
     cmds:
-      - task: frontend:install
-      - cd frontend && pnpm exec playwright install chromium && pnpm test:e2e
+      - sh macos/Scripts/test-package-app.sh
 
   security:
-    desc: gitleaks, go mod verify, govulncheck, gosec and the frontend dependency audit
+    desc: gitleaks, go mod verify, govulncheck and gosec
     cmds:
       - go run {{.GITLEAKS}} git --no-banner --redact .
       - go mod verify
-      - task: frontend:dist
       - go run {{.GOVULNCHECK}} ./...
       - go -C tools/security build -o ../../.tools/gosec github.com/securego/gosec/v2/cmd/gosec
       - .tools/gosec -quiet ./internal/... ./cmd/...
-      - .tools/gosec -quiet -tags production .
-      - cd frontend && pnpm audit --audit-level=low
+
+  dev:app:
+    desc: Build 'PR Nanny Dev.app' (bundle ID com.alexcatdad.pr-nanny.dev) into macos/.build/dev
+    cmds:
+      - sh macos/Scripts/dev-app.sh
+
+  dev:run:
+    desc: Build and launch 'PR Nanny Dev.app'
+    cmds:
+      - sh macos/Scripts/dev-app.sh --run
 
   tools:install:
     internal: true
     cmds:
       - sh scripts/install-ci-tools.sh
 
-  frontend:install:
-    internal: true
-    cmds:
-      - cd frontend && pnpm install --frozen-lockfile
-
-  frontend:dist:
-    internal: true
-    deps: [frontend:install]
-    # Always rebuild: Playwright replaces frontend/dist with a fixture build.
-    cmds:
-      - cd frontend && pnpm build
-
   # --- app-owned release tasks, called by reltool from release.json ---
   build:darwin-arm64:
-    desc: Build, sign (when MACOS_SIGNING_IDENTITY is set) and package the macOS app zip
+    desc: Build, sign (Developer ID when MACOS_SIGNING_IDENTITY is set) and zip PR Nanny.app
     cmds:
-      - task: frontend:install
       - sh scripts/package.sh "$RELEASE_VERSION" darwin
       - cp "dist/pr-nanny-$RELEASE_VERSION-darwin-arm64.zip" "$RELEASE_OUT/"
 
   validate:darwin-arm64:
     cmds:
       - sh scripts/verify-package.sh dist
-      - sh scripts/check-production.sh bin/pr-nanny
       - |
         smoke=$(mktemp -d)
         trap 'rm -rf "$smoke"' EXIT
         ditto -x -k "dist/pr-nanny-$RELEASE_VERSION-darwin-arm64.zip" "$smoke"
-        "$smoke/PR Nanny.app/Contents/MacOS/pr-nanny" --smoke-test
+        APP_VERSION="$RELEASE_VERSION" sh macos/Scripts/validate-bundle.sh "$smoke/PR Nanny.app"
+        sh scripts/check-production.sh "$smoke/PR Nanny.app/Contents/Helpers/pr-nanny-helper"
+        "$smoke/PR Nanny.app/Contents/MacOS/PRNanny" --smoke-test
 
   # --- release-tools consumer snippet (docs/consumer.md in release-tools) ---
   reltool:install:

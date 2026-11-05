@@ -21,7 +21,6 @@ jobs:
     with:
       runner: macos-26
       go-version: '1.27.3'
-      node-version: '24.19.0'
       lint-command: go run github.com/go-task/task/v3/cmd/task@v3.54.0 lint
       build-command: go run github.com/go-task/task/v3/cmd/task@v3.54.0 build
   main:
@@ -32,7 +31,6 @@ jobs:
     with:
       runner: macos-26
       go-version: '1.27.3'
-      node-version: '24.19.0'
       test-command: go run github.com/go-task/task/v3/cmd/task@v3.54.0 test
       integration-command: go run github.com/go-task/task/v3/cmd/task@v3.54.0 test:integration
       security-command: go run github.com/go-task/task/v3/cmd/task@v3.54.0 security
@@ -43,4 +41,5 @@ jobs:
       security-events: write
     uses: alexcatdad/ci-actions/.github/workflows/codeql.yml@ce30691e2ef9fe853025173069f6fa323907e053
     with:
-      languages: '["go", "javascript-typescript"]'
+      languages: '["go", "swift"]'
+      swift-build-command: swift build --package-path macos

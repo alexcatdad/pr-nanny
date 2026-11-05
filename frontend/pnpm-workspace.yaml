@@ -1,8 +1,0 @@
-allowBuilds:
-  esbuild: true
-auditConfig:
-  ignoreGhsas:
-    # deepmerge prototype poisoning (low), reached only at build time through
-    # @sveltejs/vite-plugin-svelte config merging; no patched version exists.
-    # The Wails frontend is replaced by the Swift app; drop with frontend/.
-    - GHSA-gcqx-w48m-w2h4

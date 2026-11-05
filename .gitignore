@@ -1,14 +1,11 @@
 /bin/
 /dist/
 /coverage/
-/frontend/node_modules/
-/frontend/dist/
-/frontend/test-results/
-/frontend/playwright-report/
+/macos/.build/
+/macos/.swiftpm/
 /session-progress/
 /.tools/
 *.log
 .DS_Store
 /gosec
-/frontend/coverage/
 /.task/
