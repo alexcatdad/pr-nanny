@@ -32,8 +32,8 @@ app="$mount_dir/PR Nanny.app"
 codesign --verify --deep --strict --test-requirement '=anchor apple generic and certificate leaf[subject.OU] = "CX6D6KGCT5"' "$app"
 xcrun stapler validate "$app"
 spctl --assess --type execute --verbose=2 "$app"
-actual=$("$app/Contents/MacOS/pr-nanny" --version)
-case "$actual" in "PR Nanny $version ("*")") ;; *) echo 'Contained app version mismatch' >&2; exit 1;; esac
+actual=$("$app/Contents/Helpers/pr-nanny-helper" -version)
+case "$actual" in "pr-nanny-helper $version ("*) ;; *) echo 'Contained app version mismatch' >&2; exit 1;; esac
 if unzip -Z1 "$reference" | grep -Eq '(^/|(^|/)\.\.(/|$)|\\)'; then
   echo 'Unsafe reference archive paths' >&2; exit 1
 fi

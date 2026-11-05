@@ -1,5 +1,7 @@
 # Quality evidence
 
+> Historical record of the Wails v3 + Svelte release candidates (0.1.x). That app was replaced by the native Swift menu-bar app; frontend, webview and Wails measurements below no longer describe the shipped app.
+
 Local integration checks on 2026-10-20 used macOS ARM64. Hosted platform qualification is recorded in Actions and the implementation checkpoint; a local build does not establish Windows/Linux behavior.
 
 ## Coverage

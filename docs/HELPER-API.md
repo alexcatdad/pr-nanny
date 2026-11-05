@@ -5,7 +5,7 @@
 ## Process
 
 - Data directory: `~/Library/Application Support/pr-nanny` (override with `-data-dir`). Mode 0700.
-- Lock: `pr-nanny.lock` in that directory, an exclusive non-blocking `flock` held for the process lifetime. The Wails app takes the same lock. A second instance exits with status **3**.
+- Lock: `pr-nanny.lock` in that directory, an exclusive non-blocking `flock` held for the process lifetime. A second instance exits with status **3**.
 - Socket: `pr-nanny.sock` in that directory, mode 0600. A stale socket is replaced only while the lock is held and only if it is a socket owned by the current user.
 - Peers: every connection is checked with `LOCAL_PEERCRED`; a peer with a different UID gets `UNAUTHORIZED_PEER` and nothing is read.
 - Lifetime: the helper exits when its parent process exits (kqueue `NOTE_EXIT`), on `SIGINT`/`SIGTERM`, or after replying to `stop`. If started with parent PID 1 it does not watch a parent.
@@ -80,7 +80,7 @@ The helper queues every monitor event and gates it **when `nextNotifications` re
 ```
 
 - `event` is one of `ci`, `approval`, `review_requested`, `merged`, `closed`; titles are fixed.
-- `id` is the sha256-derived dedupe ID (same as the Wails app). Use it as the notification identifier so repeats coalesce.
+- `id` is the sha256-derived dedupe ID (same as the former Wails app). Use it as the notification identifier so repeats coalesce.
 - `cursor` is opaque. Start with `""`; pass the returned cursor next time. A cursor from another helper run or a malformed one reads from the oldest retained entry.
 - The queue keeps the newest 64 entries. `missed: true` means entries were dropped since the cursor.
 - The app decides whether to post (permission, sound) and opens the PR with `resolvePR` on click.

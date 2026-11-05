@@ -22,8 +22,8 @@ app="$work/contents/PR Nanny.app"
 [ -d "$app" ] && [ ! -L "$app" ] || { echo 'Expected app bundle missing' >&2; exit 1; }
 codesign --verify --deep --strict --test-requirement '=anchor apple generic and certificate leaf[subject.OU] = "CX6D6KGCT5"' "$app"
 xcrun stapler validate "$app"
-actual=$("$app/Contents/MacOS/pr-nanny" --version)
-case "$actual" in "PR Nanny $version ("*")") ;; *) echo 'App version does not match requested version' >&2; exit 1;; esac
+actual=$("$app/Contents/Helpers/pr-nanny-helper" -version)
+case "$actual" in "pr-nanny-helper $version ("*) ;; *) echo 'App version does not match requested version' >&2; exit 1;; esac
 ln -s /Applications "$work/contents/Applications"
 cat > "$work/contents/Install PR Nanny.txt" <<'EOF'
 Drag PR Nanny.app onto Applications.
@@ -34,6 +34,6 @@ mkdir -p "$output_dir"
 output="$output_dir/pr-nanny-$version-darwin-arm64.dmg"
 [ ! -e "$output" ] || { echo 'Refusing to overwrite an existing DMG' >&2; exit 1; }
 hdiutil create -quiet -fs HFS+ -volname 'PR Nanny' -srcfolder "$work/contents" -format UDZO "$output"
-codesign --force --timestamp --sign "$CODESIGN_IDENTITY" --identifier io.github.alexcatdad.pr-nanny.dmg "$output"
+codesign --force --timestamp --sign "$CODESIGN_IDENTITY" --identifier com.alexcatdad.pr-nanny.dmg "$output"
 codesign --verify --strict "$output"
 echo "Created $output. Notarise and staple the DMG before computing its checksum."
