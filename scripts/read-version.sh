@@ -7,6 +7,8 @@ numeric='(0|[1-9][0-9]*)'
 prerelease_id="(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
 build_id='[0-9A-Za-z-]+'
 pattern="^$numeric\\.$numeric\\.$numeric(-$prerelease_id(\\.$prerelease_id)*)?(\\+$build_id(\\.$build_id)*)?$"
+# release-tools v0.3.0 daily CalVer YYYY.MM.DD.N (internal/calver dailyPattern).
+calver='^[0-9]{4}\.(0[1-9]|1[0-2])\.(0[1-9]|[12][0-9]|3[01])\.[1-9][0-9]*$'
 # A local release supplies the reserved version through RELEASE_VERSION; an
 # explicit file argument or an ordinary source build reads VERSION.
 if [ -n "${RELEASE_VERSION:-}" ] && [ "$#" -eq 0 ]; then
@@ -19,8 +21,8 @@ else
   }
   VERSION=$(cat "$VERSION_FILE")
 fi
-printf '%s\n' "$VERSION" | grep -Eq "$pattern" || {
-  echo 'VERSION must contain one valid SemVer value' >&2
+printf '%s\n' "$VERSION" | grep -Eq -e "$pattern" -e "$calver" || {
+  echo 'VERSION must contain one valid SemVer or YYYY.MM.DD.N value' >&2
   exit 2
 }
 printf '%s\n' "$VERSION"
