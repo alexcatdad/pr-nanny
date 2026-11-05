@@ -3,11 +3,13 @@
 ## Components
 
 - `main.go`, `service.go`, and `native.go` create the Wails tray app, window, OS integrations, and the renderer's narrow application API.
-- `internal/app` coordinates settings, authentication changes, validated browser opening, refresh control, and platform actions without depending on Wails.
+- `cmd/pr-nanny-helper` runs the same backend without Wails and serves it over a private unix socket (`internal/helper`, see [docs/HELPER-API.md](docs/HELPER-API.md)) for the native menu-bar app that will replace Wails.
+- `internal/app` coordinates settings, authentication changes, PR URL resolution, notification gating, refresh control, and optional launch-at-login without depending on any UI.
 - `internal/auth` validates credentials and reads/writes secrets through the native credential store or the existing GitHub CLI session.
 - `internal/github` issues read-only GitHub GraphQL queries, handles bounded pagination and team discovery, and normalizes PR, approval, and status-check data.
 - `internal/core` polls, retains the last good snapshot during failures, manages per-PR bells, tracks notification transitions, and schedules local notifications.
-- `internal/storage` stores versioned settings and notification state as separate atomic JSON files.
+- `internal/storage` stores versioned settings and notification state as separate atomic JSON files and holds the single-instance lock.
+- `internal/notify` holds the push dispatcher used by Wails and the pull queue used by the helper.
 - `internal/model` defines the non-secret snapshot and settings contract shared by the backend and UI.
 - `internal/websecurity` supplies the Content Security Policy and filters the Wails runtime surface.
 - `frontend` contains the Svelte/TypeScript popup and settings. Browser fixtures are enabled only through test/development flags; they are not embedded into production assets.
@@ -43,7 +45,7 @@ Settings store account metadata, method, interval, layout, event preferences, gl
 
 Review-request false-to-true edges can notify without a bell; other changes need a bell. Overlapping category membership is deduplicated by GitHub PR node ID. The UI snapshot omits internal review-request IDs used by the Go monitor to recognize a newly recreated request. Notification baselines provide at-most-once attempts, not guaranteed delivery: an OS failure after the baseline write may drop a notification.
 
-A bounded single-worker dispatcher keeps native permission requests and delivery off the polling path. Pending events recheck current notification preferences before delivery. Permission denial prompts at most once per session; failures appear as safe warnings. A full queue drops excess events and reports a warning. Linux notification bodies escape XML markup so GitHub text cannot inject links or images into the desktop notification.
+A bounded single-worker dispatcher keeps native permission requests and delivery off the polling path. Pending events recheck current notification preferences before delivery. Permission denial prompts at most once per session; failures appear as safe warnings. A full queue drops excess events and reports a warning. The helper instead keeps a bounded queue that the app reads by cursor; gating runs at read time and dedupe IDs are the same sha256 values.
 
 ## Renderer and production boundary
 
@@ -51,8 +53,8 @@ Wails embeds `frontend/dist`; production builds do not fetch application code fr
 
 This restricts normal resource/connection requests and generic runtime calls. Pinned Wails beta.33 does not provide a supported cross-platform top-level navigation veto; CSP does not fully sandbox an already compromised renderer. See [SECURITY.md](SECURITY.md) for the demonstrated containment limit.
 
-`scripts/package.sh` and `scripts/package-windows.ps1` build with `-tags production`. The production build disables development preview. `production_guard.go` makes a production build with `mcp`, `devtools`, or `server` tags fail to compile. MCP support is limited to an explicitly tagged development build, and its CSP may allow only the configured loopback callback port. Browser fixtures are gated from production builds.
+`scripts/package.sh` builds with `-tags production`. The production build disables development preview. `production_guard.go` makes a production build with `mcp`, `devtools`, or `server` tags fail to compile. MCP support is limited to an explicitly tagged development build, and its CSP may allow only the configured loopback callback port. Browser fixtures are gated from production builds.
 
 ## Platform adapters and limits
 
-Wails provides tray, popup, browser, autostart, and notification integrations. `go-keyring` maps credentials to macOS Keychain, Windows Credential Manager, and Linux Secret Service. The Linux package depends on system GTK4/WebKitGTK 6; Wails smoke coverage does not establish identical tray behavior across every desktop environment. Authentication, GitHub state, and notifications are sampled/polled; transient changes between samples are unobservable. See [SECURITY.md](SECURITY.md) for security assumptions and remaining risks.
+Wails provides tray, popup, browser, autostart, and notification integrations. `go-keyring` maps credentials to the macOS Keychain. Authentication, GitHub state, and notifications are sampled/polled; transient changes between samples are unobservable. See [SECURITY.md](SECURITY.md) for security assumptions and remaining risks.

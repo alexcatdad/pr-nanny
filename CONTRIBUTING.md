@@ -4,78 +4,49 @@ Keep PR Nanny a lightweight, single-account, read-only GitHub.com monitor. Start
 
 ## Toolchain
 
-Use Go 1.27.2 (`go.mod`), Node.js 24.19.0, pnpm 11.25.0, and pinned Wails `v3.0.0-beta.33`. Frontend dependencies are exact versions in `frontend/pnpm-lock.yaml`. Install with `pnpm install --frozen-lockfile` from `frontend/`.
-
-Native builds require their actual target OS:
-
-- macOS ARM64: macOS 13+ SDK/runtime frameworks and Xcode command-line tools.
-- Windows x64: native C compiler and Microsoft Edge WebView2 Runtime.
-- Linux x64: GTK4, WebKitGTK 6 development packages, libsecret, an XDG desktop and Secret Service-compatible vault. Packages use Ubuntu 24.04/glibc 2.39 as their minimum binary baseline.
-
-On Fedora, install the native build dependencies with:
-
-```sh
-sudo dnf install gcc pkgconf-pkg-config gtk4-devel webkitgtk6.0-devel libsecret-devel
-```
-
-The running app also needs a tray-capable desktop and an unlocked Secret Service
-provider (for example KWallet with Secret Service enabled, or GNOME Keyring).
-The isolated desktop tests additionally use `xorg-x11-server-Xvfb`, `dbus-daemon`,
-`gnome-keyring`, and `dunst`. Do not run the CI-only desktop or vault probes on
-your normal session or credential store. Fedora builds are for local testing;
-build release archives on Ubuntu 24.04 to preserve the minimum binary baseline.
-
-With Wails beta.33, tray popup positioning requires X11. On Wayland desktops
-that provide XWayland, the app prefers the GTK X11 backend with a Wayland
-fallback. An explicit `GDK_BACKEND` setting is respected; forcing `wayland`
-or using a Wayland-only desktop leaves popup placement to the compositor.
+Use Go 1.27.3 (`go.mod`), Node.js 24.19.0, pnpm 11.25.0 (corepack reads `packageManager`), [Task](https://taskfile.dev) 3, and pinned Wails `v3.0.0-beta.33`, on macOS 13+ with Apple Silicon and the Xcode command-line tools. Frontend dependencies are exact versions in `frontend/pnpm-lock.yaml`. PR Nanny is macOS-only.
 
 ## Local checks
 
-Run the complete local lint/format/type-check entrypoint from the root:
-
 ```sh
-sh scripts/lint.sh
+task check   # lint, build, test, test:integration, security - everything CI runs
 ```
 
-It checks formatting without rewriting files, runs Go vet and pinned golangci-lint, ShellCheck, pinned actionlint, zizmor, Biome (including Svelte/CSS), and svelte-check. Install ShellCheck 0.11.0 and zizmor 1.31.1 on the local machine; the Go tools are built from locked tool modules. CI's Linux bootstrap downloads digest-verified tool archives with `sh scripts/install-ci-tools.sh`. Add `.tools` to PATH when using that bootstrap. Biome and Vitest use the frontend's pinned packages. Deliberate formatting fixes can use `gofmt -w` or `pnpm exec biome check --write .` from frontend.
+| Task | Runs |
+|---|---|
+| `task lint` | gofmt check, go vet, pinned golangci-lint, ShellCheck, actionlint, zizmor, Biome and svelte-check |
+| `task build` | production `bin/pr-nanny-helper` and Wails `bin/pr-nanny`, then `scripts/check-production.sh` |
+| `task test` | race-enabled Go tests with the 80% `internal/` coverage floor (`scripts/coverage-go.sh`), helper and native adapter tests, Vitest |
+| `task test:integration` | Playwright browser tests against the mock bridge (installs Chromium) |
+| `task security` | gitleaks, `go mod verify`, govulncheck, gosec and `pnpm audit` |
+
+`sh scripts/install-ci-tools.sh` (called by `task lint`) downloads digest-verified ShellCheck 0.11.0 and zizmor 1.31.1 into `.tools/`. The Go tools come from the locked modules in `tools/lint` and `tools/security` or exact `go run` versions. Formatting is never rewritten by checks; use `gofmt -w` or `pnpm exec biome check --write .` from `frontend/`.
+
+Playwright's test build includes synthetic fixtures and replaces `frontend/dist`, so build production assets again (`task build`) before packaging. Never package a fixture build. Never run credential-store roundtrip tests (`PR_NANNY_TEST_NATIVE_VAULT=1`) against your normal Keychain; ordinary Go tests use doubles.
+
+## Backend helper
+
+`cmd/pr-nanny-helper` is the backend for the coming native menu-bar app. It shares `internal/` with the Wails app, stores data in the same directory, and takes the same instance lock, so only one of them runs at a time. Its socket protocol is in [docs/HELPER-API.md](docs/HELPER-API.md). For local experiments use a throwaway directory and a PAT-mode `settings.json`, so it never reads your real `gh` session:
 
 ```sh
-sh scripts/coverage-go.sh
-(cd frontend && pnpm test:coverage && pnpm test:e2e && pnpm build)
-go test -race -tags production .
-gitleaks git --redact --no-banner --log-opts='--all'
-go mod verify
-go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./internal/...
-go -C tools/security build -o ../../gosec github.com/securego/gosec/v2/cmd/gosec
-./gosec ./internal/...
+go run ./cmd/pr-nanny-helper -data-dir "$(mktemp -d /tmp/pn-XXXX)"
 ```
-
-Playwright needs Chromium (`pnpm exec playwright install chromium`). Its test build includes synthetic fixtures and replaces `frontend/dist`, so always build production assets again before native compilation. Never package a fixture build. A browser without a test bridge cannot perform authenticated API work.
-
-Go coverage is race-enabled and atomic, with an 80% core floor, an HTML report and per-function text in `coverage/`. Vitest's V8 provider reports application logic coverage in `frontend/coverage/` with a 75% line floor. Generated/native framework glue is outside frontend coverage; tests cover the bridge, formatters and Svelte application/components. Both reports are retained as CI artifacts. These are correctness guardrails, not counts to inflate.
 
 ## Production packaging
 
-`VERSION` is the version of ordinary development builds and CI packages. Released builds take the version reserved by the local release tooling through `RELEASE_VERSION` (CalVer `YYYY.M.N`); `scripts/read-version.sh` and the frontend build prefer it when set. Do not bump `VERSION` for a release. See [Releases](#releases) and [build/README.md](build/README.md).
+`VERSION` is the version of ordinary development builds. Released builds take the version reserved by the local release tooling through `RELEASE_VERSION`; `scripts/read-version.sh` and the frontend build prefer it when set. Do not bump `VERSION` for a release. See [Releases](#releases) and [build/README.md](build/README.md).
 
 ```sh
-(cd frontend && pnpm build)
-go build -tags production -trimpath -o bin/pr-nanny .
-sh scripts/check-production.sh bin/pr-nanny
+task build
 sh scripts/package.sh "$(sh scripts/read-version.sh)" darwin
 sh scripts/verify-package.sh dist
 ```
 
-Use `linux` on a Linux x64 build host. On Windows use `scripts/package-windows.ps1` and `scripts/verify-package-windows.ps1`. Packaging never publishes a release. `--version` reports the application version and embedded VCS revision. Production builds exclude MCP, DevTools, development fixtures and server mode. Never combine the development-only `mcp` build tag with `production`.
+Packaging never publishes a release. `--version` reports the application version and embedded VCS revision. Production builds exclude MCP, DevTools, development fixtures and server mode. Never combine the development-only `mcp` build tag with `production`.
 
-## CI and desktop evidence
+## CI
 
-Validation runs frontend, lint, coverage, security, CodeQL and the native build and test targets, for validation only. CI never builds release artifacts, signs, publishes, tags or updates the tap. The stable `Qualification` job requires every validation job to succeed. Platform builds reuse the same run's production frontend artifact; test fixtures are built separately. No path filters skip release/security qualification.
-
-Native jobs exercise the real packaged app, embedded frontend IPC, isolated native credential-store roundtrips, and package integrity. Windows and Linux also probe native tray hide/show, autostart registration/removal and notification dispatch. Linux verifies D-Bus activation and Dunst receipt. Windows exercises Start Menu installation/removal; Linux uses isolated XDG installation/removal. macOS uses a disposable test keychain.
-
-An unattended runner does not establish physical tray clicks, a later login, notification delivery on every desktop, or an unlocked interactive Windows session. macOS notification permissions and bundled autostart need separate desktop acceptance. Do not claim unavailable physical testing. Never run credential-store roundtrip tests against a normal user vault; ordinary Go tests use doubles.
+`.github/workflows/validation.yml` calls `alexcatdad/ci-actions` (pinned to a commit SHA) on `macos-26`: pull requests run `pr / leaks`, `pr / lint`, `pr / build` and `pr / deps`; pushes to main and a weekly schedule run `main / test`, `main / security` and the integration task; CodeQL analyzes Go and JavaScript/TypeScript. Commands are the Task targets above, run through a pinned `go run` of go-task because the runner image has no Task binary. CI validates only: it never builds release artifacts, signs, publishes, tags or updates the tap. `pages.yml` builds and deploys the site.
 
 The application has no telemetry, GitHub mutations, subscription changes, remote frontend code, or plaintext credential fallback. Keep OS permissions minimal and redact upstream errors.
 
@@ -93,13 +64,10 @@ task release:resume   # continue an interrupted release with the same version an
 task release:abandon -- VERSION   # drop an unpublished reservation
 ```
 
-Versions are `YYYY.M.N` and tags `vYYYY.M.N`; earlier `0.1.x` tags remain as history. Targets are declared in `release.json`:
+Versions are CalVer `vYYYY.MM.DD.N` from the next release (release-tools allocates them; earlier `0.1.x` and `YYYY.M.N` tags remain as history). The only target is declared in `release.json`:
 
 | Target | Artifact | Builds on |
 |---|---|---|
 | `darwin-arm64` (macOS 13+) | `pr-nanny-VERSION-darwin-arm64.zip`, signed, notarized, stapled | the coordinator Mac |
-| `linux-amd64` (glibc 2.39+) | `pr-nanny-VERSION-linux-x64.tar.gz` | an SSH worker with GTK4 and WebKitGTK 6 (`runs: worker`) |
 
-The Linux target needs a configured worker whose `capabilities` include `linux`, `amd64`, `gtk4` and `webkitgtk-6.0`; without one, `release:check` reports the target unplaceable and publication is blocked. Windows assets of earlier releases remain as history; no Windows build is produced. The Windows sources and CI validation stay.
-
-The macOS build task signs with the hardened runtime using `MACOS_SIGNING_IDENTITY` (and `MACOS_ENTITLEMENTS` when configured); `reltool` verifies the signature, notarizes and staples. The Homebrew cask (macOS) and formula (Linux) are both updated from the published release.
+The macOS build task signs with the hardened runtime using `MACOS_SIGNING_IDENTITY` (and `MACOS_ENTITLEMENTS` when configured); `reltool` verifies the signature, notarizes and staples. The Homebrew cask is updated from the published release.

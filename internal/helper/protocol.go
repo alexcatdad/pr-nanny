@@ -63,7 +63,7 @@ const (
 	ErrUnauthorizedPeer ErrorCode = "UNAUTHORIZED_PEER"
 	ErrSettings         ErrorCode = "SETTINGS"
 	ErrAuthentication   ErrorCode = "AUTHENTICATION"
-	ErrCredentialStore  ErrorCode = "CREDENTIAL_STORE"
+	ErrCredentialStore  ErrorCode = "CREDENTIAL_STORE" // #nosec G101 -- an error code name, not a credential.
 	ErrUnavailable      ErrorCode = "UNAVAILABLE"
 	ErrInternal         ErrorCode = "INTERNAL"
 )

@@ -131,7 +131,7 @@ func (s *Server) Serve(ctx context.Context, listener *net.UnixListener) error {
 }
 
 func (s *Server) serveOne(conn *net.UnixConn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(requestTimeout))
 	if !s.authorize(conn) {
 		writeReply(conn, Response{Version: ProtocolVersion, Error: wireError(ErrUnauthorizedPeer)})

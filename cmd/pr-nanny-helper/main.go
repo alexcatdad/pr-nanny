@@ -59,7 +59,7 @@ func run(dir string) int {
 	if err != nil {
 		return fail("the instance lock is unavailable")
 	}
-	defer lock.Close()
+	defer func() { _ = lock.Close() }()
 
 	store := storage.New(dir)
 	// Preserve corrupted non-secret data and restart with a fresh baseline.

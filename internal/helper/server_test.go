@@ -70,7 +70,7 @@ type harness struct {
 	backend *fakeBackend
 	queue   *notify.Queue
 	stopped chan struct{}
-	done    chan error
+	done    chan struct{}
 }
 
 func shortDir(t *testing.T) string {
@@ -92,7 +92,7 @@ func start(t *testing.T, authorize func(*net.UnixConn) bool) *harness {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = lock.Close() })
-	h := &harness{socket: filepath.Join(dir, SocketName), backend: &fakeBackend{}, queue: notify.NewQueue(), stopped: make(chan struct{}), done: make(chan error, 1)}
+	h := &harness{socket: filepath.Join(dir, SocketName), backend: &fakeBackend{}, queue: notify.NewQueue(), stopped: make(chan struct{}), done: make(chan struct{})}
 	listener, err := Listen(h.socket)
 	if err != nil {
 		t.Fatal(err)
@@ -100,7 +100,7 @@ func start(t *testing.T, authorize func(*net.UnixConn) bool) *harness {
 	ctx, cancel := context.WithCancel(context.Background())
 	var once sync.Once
 	server := &Server{Backend: h.backend, Notifications: h.queue, Version: "2026.11.05.1", Commit: "abc123", OnStop: func() { once.Do(func() { close(h.stopped) }) }, authorize: authorize}
-	go func() { h.done <- server.Serve(ctx, listener) }()
+	go func() { _ = server.Serve(ctx, listener); close(h.done) }()
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -118,7 +118,7 @@ func (h *harness) raw(t *testing.T, payload []byte) Response {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	if payload != nil {
 		if err := writeFrame(conn, payload); err != nil {
@@ -261,7 +261,7 @@ func TestOversizedFrameIsRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	var header [4]byte
 	binary.BigEndian.PutUint32(header[:], MaxFrameBytes+1)
 	_, _ = conn.Write(header[:])
@@ -286,7 +286,7 @@ func TestCurrentUserPeerIsAuthorized(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 	go func() {
 		conn, err := net.Dial("unix", path)
 		if err == nil {
@@ -298,7 +298,7 @@ func TestCurrentUserPeerIsAuthorized(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if !authorizedPeer(conn) {
 		t.Fatal("same-user peer rejected")
 	}
@@ -323,7 +323,6 @@ func TestHealthVersionAndStop(t *testing.T) {
 	}
 	select {
 	case <-h.done:
-		h.done <- nil
 	case <-time.After(2 * time.Second):
 		t.Fatal("server kept serving after stop")
 	}
