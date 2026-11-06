@@ -8,10 +8,10 @@ let package = Package(
         .executable(name: "PRNanny", targets: ["PRNanny"])
     ],
     dependencies: [
-        // menubar-kit v2026.11.05.2. SwiftPM cannot resolve four-part CalVer tags, so pin the tag's commit.
+        // menubar-kit v2026.11.06.1. SwiftPM cannot resolve four-part CalVer tags, so pin the tag's commit.
         .package(
             url: "https://github.com/alexcatdad/menubar-kit.git",
-            revision: "ec879dcd4c33638c90f5f5be0a8cd21c5eb75665")
+            revision: "02c011866c9a0fbb18bce21b2910410f87642860")
     ],
     targets: [
         // All testable logic lives in PRNannyNative; the app target is UI glue.
@@ -22,5 +22,9 @@ let package = Package(
             name: "PRNanny",
             dependencies: ["PRNannyNative", .product(name: "MenubarKit", package: "menubar-kit")]),
         .testTarget(name: "PRNannyNativeTests", dependencies: ["PRNannyNative"]),
+        // Hosts the app's SwiftUI views to check their layout.
+        .testTarget(
+            name: "PRNannyTests",
+            dependencies: ["PRNanny", "PRNannyNative", .product(name: "MenubarKit", package: "menubar-kit")]),
     ]
 )
