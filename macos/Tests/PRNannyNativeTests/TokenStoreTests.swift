@@ -92,7 +92,9 @@ private let bundleID = "com.alexcatdad.pr-nanny"
     let keychain = FakeKeychain(hasEntitlement: true)
     let store = KeychainTokenStore(bundleID: bundleID, calls: keychain.calls)
     #expect(store.service == "com.alexcatdad.pr-nanny.github-token")
-    #expect(store.accessGroup == "CX6D6KGCT5.com.alexcatdad.pr-nanny")
+    #expect(KeychainTokenStore.teamID == "CX6D6KGCT5")
+    let group = "\(KeychainTokenStore.teamID).\(bundleID)"
+    #expect(store.accessGroup == group)
 
     try store.save("synthetic-one", for: "octocat")
     try store.save("synthetic-two", for: "hubot")
@@ -101,7 +103,7 @@ private let bundleID = "com.alexcatdad.pr-nanny"
             .init(
                 dataProtection: true, account: "hubot", token: "synthetic-two",
                 accessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String,
-                accessGroup: "CX6D6KGCT5.com.alexcatdad.pr-nanny")
+                accessGroup: group)
         ])
     #expect(try store.token(for: "hubot") == "synthetic-two")
     #expect(try store.token(for: "octocat") == nil)

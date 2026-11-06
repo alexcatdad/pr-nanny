@@ -53,15 +53,15 @@ func TestProvideLoadsTokenForLoad(t *testing.T) {
 }
 
 func TestLegacyTokenMovesIntoMemory(t *testing.T) {
-	token := "synthetic-legacy-123456789"
-	legacy := &memoryStore{value: token, account: "octocat"}
+	want := "not-a-real-legacy-value"
+	legacy := &memoryStore{value: want, account: "octocat"}
 	memory := NewMemoryStore()
 	m := NewManager(memory, nil, nil).WithLegacyStore(legacy)
 	got, err := m.LegacyToken("octocat")
-	if err != nil || got != token {
+	if err != nil || got != want {
 		t.Fatalf("legacy = %q %v", got, err)
 	}
-	if loaded, err := memory.Get(service, "octocat"); err != nil || loaded != token {
+	if loaded, err := memory.Get(service, "octocat"); err != nil || loaded != want {
 		t.Fatalf("memory = %q %v", loaded, err)
 	}
 	if _, err := m.LegacyToken("hubot"); !errors.Is(err, ErrNoCredential) {
