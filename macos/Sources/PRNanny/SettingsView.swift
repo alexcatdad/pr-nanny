@@ -2,24 +2,26 @@ import MenubarKit
 import PRNannyNative
 import SwiftUI
 
-/// The Settings window: GitHub account, refresh interval, notifications, startup.
+/// The Settings window: GitHub account, refresh interval, notifications, startup, about.
 struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
     @AppStorage(NotificationPreferences.enabledKey) private var notify = false
-    @AppStorage(NotificationPreferences.soundEnabledKey) private var sound = false
     @State private var method: AuthMethod?
     @State private var token = ""
     @State private var notice = ""
     @State private var working = false
-    @State private var permission = NotificationPermission.notDetermined
     @State private var launchAtLogin = false
 
     var body: some View {
-        Form {
+        SettingsForm {
             if let snapshot = model.snapshot {
                 account(snapshot)
                 refresh(snapshot)
-                notifications(snapshot)
+                NotificationSettingsSection(
+                    notifier: model.notifier, toggleTitle: "Allow notifications", offersSound: true,
+                    enabledKey: NotificationPreferences.enabledKey,
+                    soundEnabledKey: NotificationPreferences.soundEnabledKey)
+                events(snapshot)
                 startup
             } else {
                 Text("PR Nanny is starting. Settings appear once its helper is ready.").foregroundStyle(.secondary)
@@ -27,16 +29,13 @@ struct SettingsView: View {
             if !notice.isEmpty {
                 Text(notice).font(.callout).foregroundStyle(.secondary).accessibilityAddTraits(.updatesFrequently)
             }
-            Section { VersionFooter() }
+            SettingsAboutSection(repository: URL(string: "https://github.com/alexcatdad/pr-nanny"))
         }
-        .formStyle(.grouped)
-        .frame(width: 460)
         .disabled(working || model.busy)
-        .task {
-            launchAtLogin = model.loginItemEnabled
-            // Live, so a change in System Settings updates the denied note while Settings is open.
-            for await current in model.notifier.permissionUpdates() { permission = current }
-        }
+        // The kit section owns the toggle and the permission prompt; the helper gates
+        // notifications too, so mirror the switch into its settings.
+        .onChange(of: notify) { enabled in mirrorNotifications(enabled) }
+        .task { launchAtLogin = model.loginItemEnabled }
     }
 
     // MARK: Sections
@@ -102,10 +101,8 @@ struct SettingsView: View {
         }
     }
 
-    private func notifications(_ snapshot: Snapshot) -> some View {
+    private func events(_ snapshot: Snapshot) -> some View {
         Section {
-            Toggle("Allow notifications", isOn: $notify)
-                .onChange(of: notify) { enabled in setNotifications(enabled, snapshot: snapshot) }
             ForEach(EventToggle.all) { event in
                 Toggle(
                     event.label,
@@ -118,15 +115,10 @@ struct SettingsView: View {
                         })
                 )
                 .disabled(!notify)
-                .padding(.leading, 12)
             }
-            Toggle("Play a sound", isOn: $sound).disabled(!notify).padding(.leading, 12)
-            if notify && permission == .denied {
-                Text(SettingsNotice.notificationsDenied).font(.caption).foregroundStyle(.orange)
-            }
-            Text(SettingsNotice.hint).font(.caption).foregroundStyle(.secondary)
+            SettingsNote(SettingsNotice.hint)
         } header: {
-            Text("Notifications")
+            Text("Notify me about")
         }
     }
 
@@ -165,12 +157,10 @@ struct SettingsView: View {
         }
     }
 
-    private func setNotifications(_ enabled: Bool, snapshot: Snapshot) {
+    private func mirrorNotifications(_ enabled: Bool) {
+        guard let current = model.snapshot?.settings, current.notifications != enabled else { return }
         Task {
-            permission = enabled ? await model.notifier.userEnabledNotifications() : await model.notifier.permission()
-            if snapshot.settings.notifications != enabled,
-                !(await model.save(SettingsRules.withNotifications(enabled, current: snapshot.settings)))
-            {
+            if !(await model.save(SettingsRules.withNotifications(enabled, current: current))) {
                 notice = SettingsNotice.saveFailed
             }
         }

@@ -50,8 +50,6 @@ public enum SettingsNotice {
     public static let patFailed = "Could not validate that token. Check it and try again."
     public static let cliConnected = "GitHub CLI connected."
     public static let cliFailed = "Could not find an authenticated GitHub CLI session."
-    public static let notificationsDenied =
-        "Notifications for PR Nanny are turned off in System Settings › Notifications."
     public static let loginItemNeedsApproval = "Allow PR Nanny in System Settings › General › Login Items."
     public static let loginItemFailed = "Could not change the login item. Try again."
     public static let hint =
