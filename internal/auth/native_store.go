@@ -6,12 +6,19 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
-// NativeStore delegates secret storage to the macOS Keychain. Errors never
-// trigger fallback.
+// NativeStore reads and removes the login-keychain item that PR Nanny
+// 0.1.x wrote through go-keyring (service "pr-nanny-github"). That item's
+// ACL trusts /usr/bin/security, so any process running as the user can read
+// it. It is used only to migrate the token into the app's own keychain item
+// and then delete it; new tokens are never written here.
 type NativeStore struct{}
 
 func (NativeStore) Get(service, account string) (string, error) {
-	return keyring.Get(service, account)
+	token, err := keyring.Get(service, account)
+	if errors.Is(err, keyring.ErrNotFound) {
+		return "", ErrNoCredential
+	}
+	return token, err
 }
 
 func (NativeStore) Set(service, account, secret string) error {

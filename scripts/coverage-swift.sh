@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 package=macos
 target=PRNannyNative
 tests=PRNannyNativeTests
-floor=69
+floor=82
 
 swift test --package-path "$package" --enable-code-coverage -Xswiftc -warnings-as-errors
 bin=$(swift build --package-path "$package" --show-bin-path)

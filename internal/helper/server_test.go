@@ -25,6 +25,9 @@ import (
 
 const syntheticToken = "github_pat_synthetic_fixture_value" //nolint:gosec // G101: synthetic test fixture, not a credential
 
+// legacyFixture stands in for a migrated 0.1.x token; replies may carry it.
+const legacyFixture = "github_pat_synthetic_legacy_value" //nolint:gosec // G101: synthetic test fixture, not a credential
+
 type fakeBackend struct {
 	mu       sync.Mutex
 	calls    []string
@@ -60,6 +63,19 @@ func (f *fakeBackend) SetLayout(layout string) (model.Snapshot, error) {
 	return f.record("setLayout:" + layout)
 }
 func (f *fakeBackend) Refresh() error { _, err := f.record("refresh"); return err }
+func (f *fakeBackend) ProvideToken(account, token string) (model.Snapshot, error) {
+	if token != syntheticToken {
+		return model.Snapshot{}, appcore.ErrAuthentication
+	}
+	return f.record("provideToken:" + account)
+}
+func (f *fakeBackend) LegacyToken() (string, string, error) {
+	if _, err := f.record("legacyToken"); err != nil {
+		return "", "", err
+	}
+	return "octocat", legacyFixture, nil
+}
+func (f *fakeBackend) DeleteLegacyToken() error { _, err := f.record("deleteLegacyToken"); return err }
 func (f *fakeBackend) ResolvePR(id string) (string, error) {
 	_, err := f.record("resolvePR:" + id)
 	return f.url, err
@@ -390,5 +406,55 @@ func TestWatchProcessClosesWhenProcessExits(t *testing.T) {
 	case <-WatchProcess(cmd.Process.Pid):
 	case <-time.After(time.Second):
 		t.Fatal("already-exited process not reported")
+	}
+}
+
+func TestTokenOperations(t *testing.T) {
+	h := start(t, nil)
+	if resp := h.call(t, OpProvideToken, ProvideTokenBody{Account: "octocat", Token: syntheticToken}); resp.Error != nil {
+		t.Fatalf("provideToken: %+v", resp)
+	}
+	var legacy LegacyTokenReply
+	resp := h.call(t, OpLegacyToken, nil)
+	if resp.Error != nil || json.Unmarshal(resp.Body, &legacy) != nil || legacy != (LegacyTokenReply{Account: "octocat", Token: legacyFixture}) {
+		t.Fatalf("legacyToken: %+v", resp)
+	}
+	if resp := h.call(t, OpDeleteLegacyToken, nil); resp.Error != nil {
+		t.Fatalf("deleteLegacyToken: %+v", resp)
+	}
+	if got := strings.Join(h.backend.calls, " "); got != "provideToken:octocat legacyToken deleteLegacyToken" {
+		t.Fatalf("calls = %s", got)
+	}
+}
+
+func TestTokenOperationErrors(t *testing.T) {
+	h := start(t, nil)
+	for _, bad := range []any{
+		ProvideTokenBody{Account: "octocat"},
+		ProvideTokenBody{Token: syntheticToken},
+		map[string]any{"account": "octocat", "token": syntheticToken, "extra": true},
+	} {
+		if resp := h.call(t, OpProvideToken, bad); resp.Error == nil || resp.Error.Code != ErrInvalidRequest {
+			t.Fatalf("provideToken %v: %+v", bad, resp)
+		}
+	}
+	resp := h.call(t, OpProvideToken, ProvideTokenBody{Account: "octocat", Token: "wrong-synthetic-token-value"})
+	if resp.Error == nil || resp.Error.Code != ErrAuthentication {
+		t.Fatalf("provideToken wrong: %+v", resp)
+	}
+	if resp := h.call(t, OpLegacyToken, map[string]any{"x": 1}); resp.Error == nil || resp.Error.Code != ErrInvalidRequest {
+		t.Fatalf("legacyToken body: %+v", resp)
+	}
+	if resp := h.call(t, OpDeleteLegacyToken, map[string]any{"x": 1}); resp.Error == nil || resp.Error.Code != ErrInvalidRequest {
+		t.Fatalf("deleteLegacyToken body: %+v", resp)
+	}
+	h.backend.err = appcore.ErrNoLegacyToken
+	resp = h.call(t, OpLegacyToken, nil)
+	if resp.Error == nil || resp.Error.Code != ErrNotFound || resp.Error.Message != appcore.ErrNoLegacyToken.Error() || len(resp.Body) != 0 {
+		t.Fatalf("legacyToken missing: %+v", resp)
+	}
+	h.backend.err = appcore.ErrCredentialStore
+	if resp := h.call(t, OpDeleteLegacyToken, nil); resp.Error == nil || resp.Error.Code != ErrCredentialStore {
+		t.Fatalf("deleteLegacyToken failure: %+v", resp)
 	}
 }

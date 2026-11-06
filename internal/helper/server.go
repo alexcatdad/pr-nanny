@@ -36,6 +36,9 @@ type Backend interface {
 	SetLayout(string) (model.Snapshot, error)
 	Refresh() error
 	ResolvePR(string) (string, error)
+	ProvideToken(account, token string) (model.Snapshot, error)
+	LegacyToken() (account, token string, err error)
+	DeleteLegacyToken() error
 }
 
 // Notifications is the pull side of notify.Queue.
@@ -164,6 +167,8 @@ func (s *Server) serveOne(conn *net.UnixConn) {
 		return
 	}
 	body, err := json.Marshal(result)
+	// A legacyToken reply carries the token; drop the copy once it is framed.
+	defer clear(body)
 	if err != nil {
 		writeReply(conn, Response{Version: ProtocolVersion, ID: req.ID, Error: wireError(ErrInternal)})
 		return
@@ -205,6 +210,26 @@ func (s *Server) dispatch(req Request) (any, error) {
 			return nil, errBadBody
 		}
 		return s.Backend.ConnectPAT(b.Token)
+	case OpProvideToken:
+		var b ProvideTokenBody
+		if body(req.Body, &b) != nil || b.Account == "" || b.Token == "" {
+			return nil, errBadBody
+		}
+		return s.Backend.ProvideToken(b.Account, b.Token)
+	case OpLegacyToken:
+		if body(req.Body, &struct{}{}) != nil {
+			return nil, errBadBody
+		}
+		account, token, err := s.Backend.LegacyToken()
+		if err != nil {
+			return nil, err
+		}
+		return LegacyTokenReply{Account: account, Token: token}, nil
+	case OpDeleteLegacyToken:
+		if body(req.Body, &struct{}{}) != nil {
+			return nil, errBadBody
+		}
+		return struct{}{}, s.Backend.DeleteLegacyToken()
 	case OpConnectCLI:
 		if body(req.Body, &struct{}{}) != nil {
 			return nil, errBadBody
@@ -282,6 +307,8 @@ func codeFor(err error) ErrorCode {
 		return ErrCredentialStore
 	case errors.Is(err, appcore.ErrUnavailable):
 		return ErrUnavailable
+	case errors.Is(err, appcore.ErrNoLegacyToken):
+		return ErrNotFound
 	}
 	return ErrInternal
 }
@@ -295,6 +322,7 @@ var messages = map[ErrorCode]string{
 	ErrAuthentication:   appcore.ErrAuthentication.Error(),
 	ErrCredentialStore:  appcore.ErrCredentialStore.Error(),
 	ErrUnavailable:      appcore.ErrUnavailable.Error(),
+	ErrNotFound:         appcore.ErrNoLegacyToken.Error(),
 	ErrInternal:         "The PR Nanny helper could not complete the request.",
 }
 
@@ -325,6 +353,7 @@ func writeReply(w io.Writer, r Response) {
 	data, err := json.Marshal(r)
 	if err == nil {
 		_ = writeFrame(w, data)
+		clear(data)
 	}
 }
 
@@ -336,6 +365,7 @@ func writeFrame(w io.Writer, data []byte) error {
 	binary.BigEndian.PutUint32(frame, uint32(len(data))) // #nosec G115 -- bounded by MaxFrameBytes.
 	copy(frame[4:], data)
 	_, err := w.Write(frame)
+	clear(frame)
 	return err
 }
 

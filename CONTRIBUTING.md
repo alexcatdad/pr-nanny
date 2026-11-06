@@ -18,7 +18,7 @@ task check   # lint, build, test, test:integration, security - everything CI run
 |---|---|
 | `task lint` | gofmt check, go vet, pinned golangci-lint (`standard` plus gosec, errorlint, bodyclose, misspell, gocritic diagnostics), `swift format lint --strict`, ShellCheck, actionlint, zizmor |
 | `task build` | production `bin/pr-nanny-helper` and `scripts/check-production.sh`, then the Swift app and tests with warnings as errors |
-| `task test` | race-enabled Go tests with the 80% `internal/` coverage floor (`scripts/coverage-go.sh`), helper tests, `swift test` with warnings as errors and the 69% `PRNannyNative` line-coverage floor (`scripts/coverage-swift.sh`) |
+| `task test` | race-enabled Go tests with the 80% `internal/` coverage floor (`scripts/coverage-go.sh`), helper tests, `swift test` with warnings as errors and the 82% `PRNannyNative` line-coverage floor (`scripts/coverage-swift.sh`) |
 | `task test:integration` | builds the dev bundle, validates it, and runs `PRNanny --smoke-test` (bundled helper answers over its socket) |
 | `task security` | gitleaks, `go mod verify`, govulncheck and gosec |
 | `task dev:app`, `task dev:run` | build (and launch) `macos/.build/dev/PR Nanny Dev.app`, bundle ID `com.alexcatdad.pr-nanny.dev` |
@@ -55,7 +55,7 @@ The application has no telemetry, GitHub mutations, subscription changes, remote
 
 ## Releases
 
-Releases are started only by an explicit local invocation on the coordinator Mac with [release-tools](https://github.com/alexcatdad/release-tools) `reltool`, pinned in `Taskfile.yml` (`RELTOOL_TAG` and `RELTOOL_COMMIT`). Nothing in GitHub Actions releases, signs, tags, dispatches or updates the tap. Check out `release-tools` next to this repository (`../release-tools`, tags fetched) and install [Go Task](https://taskfile.dev) and Xcode.
+Releases are started only by an explicit local invocation on the coordinator Mac with [release-tools](https://github.com/alexcatdad/release-tools) `reltool`, pinned in `Taskfile.yml` (`RELTOOL_TAG` and `RELTOOL_COMMIT`). Nothing in GitHub Actions releases, signs, tags, dispatches or updates the tap. Check out `release-tools` at `../../../infrastructure/release-tools` (the workspace layout, tags fetched) or point `RELTOOL_SRC` at your checkout and install [Go Task](https://taskfile.dev) and Xcode.
 
 Machine-specific settings (state directory, signing identity, notary profile name, optional SSH workers) live in `~/.config/release-tools/config.json`, outside any checkout. A release needs this file. Its `signing.pr-nanny` entry must name the Developer ID Application identity and the `notarytool` keychain profile; see `docs/consumer.md` and `examples/local/config.json` in release-tools.
 

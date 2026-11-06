@@ -43,6 +43,7 @@ Error `message` values are fixed, user-safe sentences that the app may show as p
 | `SETTINGS` | Settings were rejected or could not be saved |
 | `AUTHENTICATION` | GitHub authentication failed |
 | `CREDENTIAL_STORE` | The Keychain is locked or unavailable |
+| `NOT_FOUND` | `legacyToken`: no PR Nanny 0.1.x token for the configured account |
 | `UNAVAILABLE` | That pull request is unknown or its URL is not a canonical GitHub.com PR URL |
 | `INTERNAL` | Anything else |
 
@@ -54,7 +55,10 @@ Error `message` values are fixed, user-safe sentences that the app may show as p
 |---|---|---|
 | `snapshot` | – | `Snapshot` |
 | `saveSettings` | `{"settings": Settings}` | `Snapshot`. Authentication method and account cannot change here. |
-| `connectPAT` | `{"token": "…"}` | `Snapshot`. Validates the token, then stores it in the Keychain. |
+| `connectPAT` | `{"token": "…"}` | `Snapshot`. Validates the token and keeps it in memory; the app saves it in its keychain. |
+| `provideToken` | `{"account": "login", "token": "…"}` | `Snapshot`. Loads the configured PAT account's token from the app's keychain into memory and starts a fetch. Other accounts get `AUTHENTICATION`. |
+| `legacyToken` | – | `{"account": "login", "token": "…"}`. Reads the configured account's 0.1.x login-keychain item (`pr-nanny-github`) and loads it, for one-time migration. |
+| `deleteLegacyToken` | – | `{}`. Deletes that 0.1.x item; a missing item is not an error. |
 | `connectCLI` | – | `Snapshot`. Uses the `gh` session for github.com. |
 | `setBell` | `{"id": "PR node ID", "enabled": true}` | `Snapshot` |
 | `setLayout` | `{"layout": "all" \| "tabs"}` | `Snapshot` |
@@ -84,3 +88,7 @@ The helper queues every monitor event and gates it **when `nextNotifications` re
 - `cursor` is opaque. Start with `""`; pass the returned cursor next time. A cursor from another helper run or a malformed one reads from the oldest retained entry.
 - The queue keeps the newest 64 entries. `missed: true` means entries were dropped since the cursor.
 - The app decides whether to post (permission, sound) and opens the PR with `resolvePR` on click.
+
+### Credentials
+
+The helper never writes a token to disk or a keychain, and never logs one. A PAT lives in its memory from `connectPAT`, `provideToken` or `legacyToken` until it exits or the account changes. The app owns the persistent copy (see [build/SIGNING.md](../build/SIGNING.md#github-token-and-the-provisioning-profile)) and sends it with `provideToken` each time the helper starts. With the GitHub CLI method the helper runs `gh auth token` for each fetch and keeps nothing.

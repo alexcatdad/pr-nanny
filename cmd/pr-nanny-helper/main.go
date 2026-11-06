@@ -79,7 +79,8 @@ func run(dir string) int {
 		}
 	}
 	client := &http.Client{Timeout: 25 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	manager := auth.NewManager(auth.NativeStore{}, auth.HTTPValidator{Client: client}, auth.GHCLI{})
+	manager := auth.NewManager(auth.NewMemoryStore(), auth.HTTPValidator{Client: client}, auth.GHCLI{}).
+		WithLegacyStore(auth.NativeStore{})
 	queue := notify.NewQueue()
 	// Launch at login and opening URLs belong to the app, so no Autostart.
 	controller, err := appcore.New(store, manager, ghapi.NewClient(client), queue, nil)

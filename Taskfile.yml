@@ -7,7 +7,10 @@ version: "3"
 vars:
   RELTOOL_TAG: v0.3.0
   RELTOOL_COMMIT: 8d84a474ef7a6b48552ca70b5f78ebd0e8295407 # commit of RELTOOL_TAG
-  RELTOOL_SRC: ../release-tools
+  # The release-tools checkout. Defaults to the workspace layout
+  # (REPOS/alexcatdad/infrastructure/release-tools); override with
+  # RELTOOL_SRC=/path in the environment or `task release RELTOOL_SRC=/path`.
+  RELTOOL_SRC: '{{.RELTOOL_SRC | default "../../../infrastructure/release-tools"}}'
   RELTOOL:
     sh: echo "${XDG_CACHE_HOME:-$HOME/.cache}/release-tools/{{.RELTOOL_COMMIT}}/reltool"
   VERSION:
@@ -108,6 +111,11 @@ tasks:
     status:
       - test -x "{{.RELTOOL}}"
     cmds:
+      - |
+        git -C "{{.RELTOOL_SRC}}" rev-parse --git-dir >/dev/null 2>&1 || {
+          echo 'release-tools checkout not found at {{.RELTOOL_SRC}}. Clone alexcatdad/release-tools there or set RELTOOL_SRC=/path/to/release-tools.' >&2
+          exit 1
+        }
       - git -C "{{.RELTOOL_SRC}}" show "{{.RELTOOL_COMMIT}}:scripts/install-reltool.sh" | sh -s -- "{{.RELTOOL_SRC}}" "{{.RELTOOL_TAG}}" "{{.RELTOOL_COMMIT}}"
 
   release:check:

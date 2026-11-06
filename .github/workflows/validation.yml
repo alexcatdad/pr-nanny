@@ -17,17 +17,18 @@ jobs:
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
-    uses: alexcatdad/ci-actions/.github/workflows/validate-pr.yml@ce30691e2ef9fe853025173069f6fa323907e053
+    uses: alexcatdad/ci-actions/.github/workflows/validate-pr.yml@515066dac791f5a1222cfc99be038c220980ce23
     with:
       runner: macos-26
       go-version: '1.27.3'
       lint-command: go run github.com/go-task/task/v3/cmd/task@v3.54.0 lint
       build-command: go run github.com/go-task/task/v3/cmd/task@v3.54.0 build
+      test-command: go run github.com/go-task/task/v3/cmd/task@v3.54.0 test
   main:
     if: github.event_name == 'push' || github.event_name == 'schedule'
     permissions:
       contents: read
-    uses: alexcatdad/ci-actions/.github/workflows/validate-main.yml@ce30691e2ef9fe853025173069f6fa323907e053
+    uses: alexcatdad/ci-actions/.github/workflows/validate-main.yml@515066dac791f5a1222cfc99be038c220980ce23
     with:
       runner: macos-26
       go-version: '1.27.3'
@@ -39,7 +40,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    uses: alexcatdad/ci-actions/.github/workflows/codeql.yml@ce30691e2ef9fe853025173069f6fa323907e053
+    uses: alexcatdad/ci-actions/.github/workflows/codeql.yml@515066dac791f5a1222cfc99be038c220980ce23
     with:
-      languages: '["go", "swift", "javascript-typescript"]'
+      languages: '["actions", "go", "swift", "javascript-typescript"]'
       swift-build-command: swift build --package-path macos
