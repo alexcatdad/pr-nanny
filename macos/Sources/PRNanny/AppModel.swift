@@ -17,7 +17,7 @@ final class AppModel: ObservableObject {
     }
 
     let identity = AppIdentity.current()
-    let notifier = MenubarNotifier()
+    let notifier: MenubarNotifier
     private let client: HelperClient
     private var process: Process?
     private var attempt = 0
@@ -35,10 +35,19 @@ final class AppModel: ObservableObject {
     /// Bumped by every action so a slower background read cannot overwrite a newer result.
     private var generation = 0
 
-    init() {
+    init(notifier: MenubarNotifier = MenubarNotifier()) {
+        self.notifier = notifier
         client = HelperClient(socketPath: identity.socketPath)
         tokens = KeychainTokenStore(bundleID: Bundle.main.bundleIdentifier ?? AppIdentity.bundleID)
     }
+
+    #if DEBUG
+        /// Shows a fixed snapshot with no helper, for layout tests and renders.
+        func showForTesting(_ snapshot: Snapshot) {
+            helper = .running
+            self.snapshot = snapshot
+        }
+    #endif
 
     var status: MenubarStatus { ConnectionPresentation.status(helper: helper, snapshot: snapshot) }
 

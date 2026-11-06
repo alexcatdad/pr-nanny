@@ -102,10 +102,9 @@ struct PanelView: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    ScrollView {
+                    BoundedScrollView(maxHeight: 380) {
                         rows(tab.filter(snapshot.pullRequests, now: now), category: tab, now: now, empty: tab.emptyText)
                     }
-                    .frame(maxHeight: 380)
                 } else if snapshot.pullRequests.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("You’re all caught up.")
@@ -115,14 +114,13 @@ struct PanelView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .groupedTile()
                 } else {
-                    ScrollView {
+                    BoundedScrollView(maxHeight: 420) {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(PRCategory.allCases) { category in
                                 section(category, items: category.filter(snapshot.pullRequests, now: now), now: now)
                             }
                         }
                     }
-                    .frame(maxHeight: 420)
                 }
             }
         }
