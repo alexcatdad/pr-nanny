@@ -68,8 +68,8 @@ echo "==> Building menu-bar app (arm64)"
 # old compatibility style instead of the current one (usb-boop, an Xcode
 # build, gets the current style).
 SDK_VERSION=$(xcrun --show-sdk-version)
-SDK_LINK="-Xlinker -platform_version -Xlinker macos -Xlinker 13.0 -Xlinker $SDK_VERSION"
-swift build -c release --arch arm64 --package-path "$MACOS" --product PRNanny -Xswiftc -warnings-as-errors $SDK_LINK >/dev/null
+swift build -c release --arch arm64 --package-path "$MACOS" --product PRNanny -Xswiftc -warnings-as-errors \
+  -Xlinker -platform_version -Xlinker macos -Xlinker 13.0 -Xlinker "$SDK_VERSION" >/dev/null
 BIN=$(swift build -c release --arch arm64 --package-path "$MACOS" --show-bin-path)
 linked_sdk=$(vtool -show-build "$BIN/PRNanny" | awk '$1 == "sdk" { print $2; exit }')
 if [ "$linked_sdk" != "$SDK_VERSION" ]; then
