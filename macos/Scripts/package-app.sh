@@ -63,8 +63,19 @@ trap 'rm -rf "$STAGE"' EXIT HUP INT TERM
 APP="$STAGE/app.app"
 
 echo "==> Building menu-bar app (arm64)"
-swift build -c release --arch arm64 --package-path "$MACOS" --product PRNanny -Xswiftc -warnings-as-errors >/dev/null
+# Record the current SDK in the binary. SwiftPM otherwise writes the minimum
+# OS (13.0) as the SDK version, and macOS then draws the app's windows in the
+# old compatibility style instead of the current one (usb-boop, an Xcode
+# build, gets the current style).
+SDK_VERSION=$(xcrun --show-sdk-version)
+SDK_LINK="-Xlinker -platform_version -Xlinker macos -Xlinker 13.0 -Xlinker $SDK_VERSION"
+swift build -c release --arch arm64 --package-path "$MACOS" --product PRNanny -Xswiftc -warnings-as-errors $SDK_LINK >/dev/null
 BIN=$(swift build -c release --arch arm64 --package-path "$MACOS" --show-bin-path)
+linked_sdk=$(vtool -show-build "$BIN/PRNanny" | awk '$1 == "sdk" { print $2; exit }')
+if [ "$linked_sdk" != "$SDK_VERSION" ]; then
+  echo "PRNanny links SDK ${linked_sdk:-unknown}, expected $SDK_VERSION" >&2
+  exit 1
+fi
 
 echo "==> Building pr-nanny-helper $APP_VERSION"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
