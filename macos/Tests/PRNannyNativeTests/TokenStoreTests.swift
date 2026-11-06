@@ -300,20 +300,20 @@ final class OneShotHelper: @unchecked Sendable {
 
     init(replies: [(body: String?, error: String?)]) throws {
         path = "/tmp/pn-\(UUID().uuidString.prefix(8)).sock"
-        fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        let listener = socket(AF_UNIX, SOCK_STREAM, 0)
+        fd = listener
         var address = sockaddr_un()
         address.sun_family = sa_family_t(AF_UNIX)
         let bytes = Array(path.utf8) + [0]
         withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: bytes) }
         let size = socklen_t(MemoryLayout<sockaddr_un>.size)
         let bound = withUnsafePointer(to: &address) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, size) }
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(listener, $0, size) }
         }
-        guard bound == 0, listen(fd, 4) == 0 else { throw HelperClientError.unavailable }
-        let fd = fd
+        guard bound == 0, listen(listener, 4) == 0 else { throw HelperClientError.unavailable }
         Thread.detachNewThread { [self] in
             for reply in replies {
-                let conn = accept(fd, nil, nil)
+                let conn = accept(listener, nil, nil)
                 guard conn >= 0 else { return }
                 var header = [UInt8](repeating: 0, count: 4)
                 _ = recv(conn, &header, 4, MSG_WAITALL)
