@@ -227,7 +227,7 @@ func TestOpenRootRejectsSettingsSymlinkOutsideDataDirectory(t *testing.T) {
 	if err := s.SaveSettings(model.DefaultSettings()); err != nil {
 		t.Fatalf("safe replacement failed: %v", err)
 	}
-	if contents, err := os.ReadFile(outside); err != nil || !strings.Contains(string(contents), `"AuthMethod":"gh"`) {
+	if contents, err := os.ReadFile(outside); err != nil || !strings.Contains(string(contents), `"AuthMethod":"gh"`) { //nolint:gosec // G304: outside is a t.TempDir path
 		t.Fatalf("outside file was modified: %q, %v", contents, err)
 	}
 }

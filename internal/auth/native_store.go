@@ -1,6 +1,10 @@
 package auth
 
-import "github.com/zalando/go-keyring"
+import (
+	"errors"
+
+	"github.com/zalando/go-keyring"
+)
 
 // NativeStore delegates secret storage to the macOS Keychain. Errors never
 // trigger fallback.
@@ -16,7 +20,7 @@ func (NativeStore) Set(service, account, secret string) error {
 
 func (NativeStore) Delete(service, account string) error {
 	err := keyring.Delete(service, account)
-	if err == keyring.ErrNotFound {
+	if errors.Is(err, keyring.ErrNotFound) {
 		return nil
 	}
 	return err

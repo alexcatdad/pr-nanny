@@ -49,11 +49,11 @@ tasks:
       - swift build --package-path macos --build-tests -Xswiftc -warnings-as-errors
 
   test:
-    desc: Go race tests with the coverage floor and the Swift tests
+    desc: Go race tests and Swift tests (warnings as errors), each with a coverage floor
     cmds:
       - sh scripts/coverage-go.sh
       - go test -race ./cmd/...
-      - swift test --package-path macos
+      - sh scripts/coverage-swift.sh
 
   test:integration:
     desc: Build the dev bundle, validate it and run its headless smoke test against the bundled helper

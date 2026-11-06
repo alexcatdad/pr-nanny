@@ -16,9 +16,9 @@ task check   # lint, build, test, test:integration, security - everything CI run
 
 | Task | Runs |
 |---|---|
-| `task lint` | gofmt check, go vet, pinned golangci-lint, `swift format lint --strict`, ShellCheck, actionlint, zizmor |
+| `task lint` | gofmt check, go vet, pinned golangci-lint (`standard` plus gosec, errorlint, bodyclose, misspell, gocritic diagnostics), `swift format lint --strict`, ShellCheck, actionlint, zizmor |
 | `task build` | production `bin/pr-nanny-helper` and `scripts/check-production.sh`, then the Swift app and tests with warnings as errors |
-| `task test` | race-enabled Go tests with the 80% `internal/` coverage floor (`scripts/coverage-go.sh`), helper tests, `swift test` |
+| `task test` | race-enabled Go tests with the 80% `internal/` coverage floor (`scripts/coverage-go.sh`), helper tests, `swift test` with warnings as errors and the 69% `PRNannyNative` line-coverage floor (`scripts/coverage-swift.sh`) |
 | `task test:integration` | builds the dev bundle, validates it, and runs `PRNanny --smoke-test` (bundled helper answers over its socket) |
 | `task security` | gitleaks, `go mod verify`, govulncheck and gosec |
 | `task dev:app`, `task dev:run` | build (and launch) `macos/.build/dev/PR Nanny Dev.app`, bundle ID `com.alexcatdad.pr-nanny.dev` |
