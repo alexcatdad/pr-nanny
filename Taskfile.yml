@@ -5,8 +5,8 @@ version: "3"
 # releases. See CONTRIBUTING.md "Releases".
 
 vars:
-  RELTOOL_TAG: v0.3.0
-  RELTOOL_COMMIT: 8d84a474ef7a6b48552ca70b5f78ebd0e8295407 # commit of RELTOOL_TAG
+  RELTOOL_TAG: v0.4.1
+  RELTOOL_COMMIT: e5dbed8034b899e5a7091ef1d3edf8e8da7989ab # commit of RELTOOL_TAG
   # The release-tools checkout. Defaults to the workspace layout
   # (REPOS/alexcatdad/infrastructure/release-tools); override with
   # RELTOOL_SRC=/path in the environment or `task release RELTOOL_SRC=/path`.
