@@ -7,7 +7,7 @@ PR Nanny is two processes in one app bundle: a native Swift menu-bar app (`PR Na
 - `macos/` — Swift package. `PRNannyNative` (library) holds the helper client, supervisor policy, models, presentation and settings rules, URL validation and notification mapping; it is what the Swift tests cover. `PRNanny` (app target) is SwiftUI glue: `MenuBarExtra` tray label and 340pt panel, the Settings scene, notification posting and launch at login. Tray, panel and notification building blocks come from [`alexcatdad/menubar-kit`](https://github.com/alexcatdad/menubar-kit), pinned by revision.
 - `cmd/pr-nanny-helper` runs the backend and serves it over a private unix socket (`internal/helper`, see [docs/HELPER-API.md](docs/HELPER-API.md)).
 - `internal/app` coordinates settings, authentication changes, PR URL resolution, notification gating and refresh control without depending on any UI.
-- `internal/auth` validates credentials and reads/writes secrets through the macOS Keychain (`go-keyring`) or the existing GitHub CLI session.
+- `internal/auth` validates credentials and holds a PAT in memory only, or reads the existing GitHub CLI session per fetch. The app keeps the PAT in its keychain item and hands it over the socket at startup; `go-keyring` is used only to migrate and delete the PR Nanny 0.1.x item.
 - `internal/github` issues read-only GitHub GraphQL queries, handles bounded pagination and team discovery, and normalizes PR, approval, and status-check data.
 - `internal/core` polls, retains the last good snapshot during failures, manages per-PR bells and tracks notification transitions.
 - `internal/storage` stores versioned settings and notification state as separate atomic JSON files and holds the single-instance lock.
@@ -23,7 +23,8 @@ flowchart LR
   Model -->|unix socket, JSON envelope v1| Helper[pr-nanny-helper]
   Helper --> App[internal/app Controller]
   App --> Auth[internal/auth]
-  Auth --> Vault[macOS Keychain]
+  Model --> Vault[App keychain item]
+  Auth --> Memory[Token in memory]
   Auth --> GHCLI[Existing gh session]
   App --> Core[internal/core Monitor]
   Core --> API[internal/github read-only client]

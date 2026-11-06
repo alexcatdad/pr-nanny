@@ -34,6 +34,11 @@ const (
 	OpHealth            Op = "health"
 	OpVersion           Op = "version"
 	OpStop              Op = "stop"
+	// The app owns the PAT in its keychain and loads it into the helper's
+	// memory; legacyToken and deleteLegacyToken migrate the 0.1.x item.
+	OpProvideToken      Op = "provideToken"
+	OpLegacyToken       Op = "legacyToken"
+	OpDeleteLegacyToken Op = "deleteLegacyToken"
 )
 
 // Request is the client envelope. Body is an operation-specific JSON object;
@@ -65,6 +70,7 @@ const (
 	ErrAuthentication   ErrorCode = "AUTHENTICATION"
 	ErrCredentialStore  ErrorCode = "CREDENTIAL_STORE" // #nosec G101 -- an error code name, not a credential.
 	ErrUnavailable      ErrorCode = "UNAVAILABLE"
+	ErrNotFound         ErrorCode = "NOT_FOUND"
 	ErrInternal         ErrorCode = "INTERNAL"
 )
 
@@ -79,6 +85,10 @@ type SaveSettingsBody struct {
 }
 type ConnectPATBody struct {
 	Token string `json:"token"`
+}
+type ProvideTokenBody struct {
+	Account string `json:"account"`
+	Token   string `json:"token"`
 }
 type SetBellBody struct {
 	ID      string `json:"id"`
@@ -99,6 +109,10 @@ type NextNotificationsBody struct {
 // setLayout reply with model.Snapshot; nextNotifications with notify.Batch.
 type ResolvePRReply struct {
 	URL string `json:"url"`
+}
+type LegacyTokenReply struct {
+	Account string `json:"account"`
+	Token   string `json:"token"`
 }
 type HealthReply struct {
 	Status string `json:"status"`

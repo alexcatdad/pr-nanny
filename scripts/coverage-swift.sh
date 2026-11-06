@@ -8,13 +8,27 @@ cd "$(dirname "$0")/.."
 package=macos
 target=PRNannyNative
 tests=PRNannyNativeTests
-floor=69
+floor=82
 
 swift test --package-path "$package" --enable-code-coverage -Xswiftc -warnings-as-errors
-bin=$(swift build --package-path "$package" --show-bin-path)
+codecov=$(dirname "$(swift test --package-path "$package" --show-codecov-path)")
+bin=$(dirname "$codecov")
+# The native build system puts every test target in one PackageTests bundle;
+# swiftbuild makes one bundle per test target.
+bundle=
+for name in "$tests" PRNannyPackageTests; do
+	if [ -f "$bin/$name.xctest/Contents/MacOS/$name" ]; then
+		bundle="$bin/$name.xctest/Contents/MacOS/$name"
+		break
+	fi
+done
+if [ -z "$bundle" ]; then
+	printf "No test bundle for %s under %s.\n" "$tests" "$bin" >&2
+	exit 1
+fi
 mkdir -p coverage
-xcrun llvm-cov report "$bin/$tests.xctest/Contents/MacOS/$tests" \
-	-instr-profile "$bin/codecov/default.profdata" \
+xcrun llvm-cov report "$bundle" \
+	-instr-profile "$codecov/default.profdata" \
 	"$PWD/$package/Sources/$target" > coverage/swift-summary.txt
 
 # Line coverage is the tenth column of the TOTAL row.

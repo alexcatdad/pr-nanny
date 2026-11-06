@@ -51,7 +51,7 @@ public struct VersionReply: Decodable, Sendable {
 
 /// Version-1 client for the helper's private unix socket (docs/HELPER-API.md):
 /// one request per connection, 4-byte big-endian length frames, at most 1 MiB.
-public struct HelperClient: Sendable {
+public struct HelperClient: HelperTokenAPI, Sendable {
     public static let protocolVersion = 1
     public static let maxFrameBytes = 1 << 20
 
@@ -82,6 +82,25 @@ public struct HelperClient: Sendable {
         struct Body: Encodable { let token: String }
         return try call("connectPAT", body: Body(token: token))
     }
+
+    /// Loads the PAT the app keeps in its keychain into the helper's memory.
+    public func provideToken(account: String, token: String) throws -> Snapshot {
+        struct Body: Encodable {
+            let account: String
+            let token: String
+        }
+        return try call("provideToken", body: Body(account: account, token: token))
+    }
+
+    public func legacyToken() throws -> LegacyToken? {
+        do {
+            return try call("legacyToken", body: EmptyBody())
+        } catch let error as HelperError where error.code == "NOT_FOUND" {
+            return nil
+        }
+    }
+
+    public func deleteLegacyToken() throws { let _: EmptyBody = try call("deleteLegacyToken", body: EmptyBody()) }
 
     public func connectCLI() throws -> Snapshot { try call("connectCLI", body: EmptyBody()) }
 

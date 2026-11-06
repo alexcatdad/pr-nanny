@@ -2,7 +2,8 @@
 # Builds dist/pr-nanny-VERSION-darwin-arm64.zip containing PR Nanny.app
 # (Swift menu-bar app + Contents/Helpers/pr-nanny-helper) and its .sha256.
 #   sh scripts/package.sh [VERSION] [darwin]
-# MACOS_SIGNING_IDENTITY (Developer ID) and MACOS_ENTITLEMENTS are optional;
+# MACOS_SIGNING_IDENTITY (Developer ID), MACOS_PROVISIONING_PROFILE (see
+# build/SIGNING.md) and MACOS_ENTITLEMENTS are optional;
 # without an identity the bundle is ad-hoc signed and only a local candidate.
 set -eu
 
@@ -22,6 +23,7 @@ trap 'rm -rf "$stage"' EXIT HUP INT TERM
 app="$stage/PR Nanny.app"
 APP_VERSION="$VERSION" SHORT_VERSION="$SHORT_VERSION" BUILD_NUMBER="$BUNDLE_VERSION" \
   SIGNING_IDENTITY="${MACOS_SIGNING_IDENTITY:-}" ENTITLEMENTS="${MACOS_ENTITLEMENTS:-}" \
+  PROVISIONING_PROFILE="${MACOS_PROVISIONING_PROFILE:-}" \
   sh "$ROOT/macos/Scripts/package-app.sh" "$app"
 
 archive="$ROOT/dist/pr-nanny-$VERSION-darwin-arm64.zip"

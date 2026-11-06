@@ -7,7 +7,7 @@ Passive GitHub.com pull-request monitor for one account: shows authored and revi
 ## Invariants
 
 - Passive monitor: never add a GitHub mutation, subscription change, telemetry, or network/auth access from the Swift app (it talks only to the helper socket).
-- Secrets live only in Go and the macOS Keychain (go-keyring). No plaintext fallback, no secrets in snapshots, helper replies or logs, no raw upstream error logging.
+- The app owns the PAT in its keychain item (`TokenStore`, data-protection keychain when the profile is embedded); the helper holds it in memory only and uses go-keyring solely to migrate and delete the 0.1.x item. No plaintext fallback, no secrets in snapshots, helper replies or logs, no raw upstream error logging.
 - Render API data as text (`Text(verbatim:)`). Validate GitHub PR URLs with `ValidPRURL` before opening them; the app validates again with `PRURL.isValid`.
 - The app reads cached snapshots only; only the user's Refresh action calls `refresh`. Respect the polling budget in `docs/API-COST.md`.
 - Notifications are gated in Go (global switch, event preference, bell; review requests bypass the bell). In the Swift app they are posted by the app bundle via MenubarKit: opt-in, permission requested from the user toggle, silent unless the user enables sound. Never `osascript`, `terminal-notifier` or a bare binary.
@@ -40,7 +40,7 @@ Passive GitHub.com pull-request monitor for one account: shows authored and revi
 
 - Canonical host: GitHub `alexcatdad/pr-nanny`.
 - Branch from `main`, PR back to `main`, squash-merge. Conventional commit messages.
-- Required checks: `pr / leaks`, `pr / lint`, `pr / build`, `pr / deps`, `codeql`. Copilot reviews every PR.
+- Required checks: `pr / leaks`, `pr / lint`, `pr / build`, `pr / deps`, plus the code-scanning rule (`codeql / <lang>` checks). Copilot reviews every PR.
 - Actions are pinned to full commit SHAs; workflows start from `permissions: {}`.
 - Do not wait on or poll CI; one status check when a decision depends on it. Respect existing work and coordinate file ownership among agents.
 

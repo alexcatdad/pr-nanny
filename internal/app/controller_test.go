@@ -62,6 +62,11 @@ type testAuth struct {
 	order                       *[]string
 	loadedMethod, loadedAccount string
 	forget                      []string
+	provided                    map[string]string
+	provideErr, legacyErr       error
+	legacy                      string
+	deletedLegacy               []string
+	deleteLegacyErr             error
 }
 
 func (a *testAuth) ConnectPAT(_ context.Context, token string) (string, error) {
@@ -90,6 +95,35 @@ func (a *testAuth) Load(_ context.Context, method, account string) (string, stri
 		return "", "", a.loadErr
 	}
 	return "synthetic-secret", account, nil
+}
+func (a *testAuth) Provide(account, token string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.provideErr != nil {
+		return a.provideErr
+	}
+	if a.provided == nil {
+		a.provided = map[string]string{}
+	}
+	a.provided[account] = token
+	return nil
+}
+func (a *testAuth) LegacyToken(account string) (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.legacyErr != nil {
+		return "", a.legacyErr
+	}
+	if a.legacy == "" {
+		return "", auth.ErrNoCredential
+	}
+	return a.legacy, nil
+}
+func (a *testAuth) DeleteLegacy(account string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.deletedLegacy = append(a.deletedLegacy, account)
+	return a.deleteLegacyErr
 }
 func (a *testAuth) ForgetPAT(account string) error {
 	a.mu.Lock()
@@ -536,4 +570,64 @@ func TestNotificationAllowedAppliesGlobalEventAndBellGating(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("global switch off", "PR_BELL", core.EventMerged, false)
+}
+
+func patSettings() model.Settings {
+	s := baseSettings()
+	s.AuthMethod = auth.MethodPAT
+	return s
+}
+
+func TestProvideTokenOnlyForConfiguredPATAccount(t *testing.T) {
+	a := &testAuth{}
+	c := newController(t, patSettings(), nil, a, nil, nil)
+	if _, err := c.ProvideToken("someone-else", "synthetic-token"); !errors.Is(err, ErrAuthentication) {
+		t.Fatalf("other account err = %v", err)
+	}
+	if _, err := c.ProvideToken("OLD-USER", "synthetic-token"); err != nil {
+		t.Fatal(err)
+	}
+	if a.provided["old-user"] != "synthetic-token" {
+		t.Fatalf("provided = %v", a.provided)
+	}
+	a.provideErr = auth.ErrCredentialStore
+	if _, err := c.ProvideToken("old-user", "synthetic-token"); !errors.Is(err, ErrCredentialStore) {
+		t.Fatalf("store err = %v", err)
+	}
+	cli := newController(t, baseSettings(), nil, &testAuth{}, nil, nil)
+	if _, err := cli.ProvideToken("old-user", "synthetic-token"); !errors.Is(err, ErrAuthentication) {
+		t.Fatalf("gh method err = %v", err)
+	}
+}
+
+func TestLegacyTokenMigration(t *testing.T) {
+	a := &testAuth{legacy: "synthetic-legacy"}
+	c := newController(t, patSettings(), nil, a, nil, nil)
+	account, token, err := c.LegacyToken()
+	if err != nil || account != "old-user" || token != "synthetic-legacy" {
+		t.Fatalf("legacy = %q %q %v", account, token, err)
+	}
+	if err := c.DeleteLegacyToken(); err != nil || fmt.Sprint(a.deletedLegacy) != "[old-user]" {
+		t.Fatalf("delete = %v %v", err, a.deletedLegacy)
+	}
+	a.deleteLegacyErr = auth.ErrCredentialStore
+	if err := c.DeleteLegacyToken(); !errors.Is(err, ErrCredentialStore) {
+		t.Fatalf("delete failure = %v", err)
+	}
+	a.legacy = ""
+	if _, _, err := c.LegacyToken(); !errors.Is(err, ErrNoLegacyToken) {
+		t.Fatalf("missing = %v", err)
+	}
+	a.legacyErr = auth.ErrCredentialStore
+	if _, _, err := c.LegacyToken(); !errors.Is(err, ErrCredentialStore) {
+		t.Fatalf("locked = %v", err)
+	}
+	cli := newController(t, baseSettings(), nil, &testAuth{legacy: "synthetic-legacy"}, nil, nil)
+	if _, _, err := cli.LegacyToken(); !errors.Is(err, ErrNoLegacyToken) {
+		t.Fatalf("gh method = %v", err)
+	}
+	empty := model.DefaultSettings()
+	if err := newController(t, empty, nil, &testAuth{}, nil, nil).DeleteLegacyToken(); err != nil {
+		t.Fatalf("no account = %v", err)
+	}
 }

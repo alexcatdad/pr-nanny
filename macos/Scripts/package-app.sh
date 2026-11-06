@@ -2,7 +2,8 @@
 # Builds PR Nanny.app (menu-bar app + bundled Go helper) at DEST.
 #
 #   APP_VERSION=0.1.1-beta.1 SHORT_VERSION=0.1.1 BUILD_NUMBER=0.1.1 \
-#     [SIGNING_IDENTITY='Developer ID Application: …'] [ENTITLEMENTS=path] \
+#     [SIGNING_IDENTITY='Developer ID Application: …'] [PROVISIONING_PROFILE=path] \
+#     [ENTITLEMENTS=path] \
 #     sh macos/Scripts/package-app.sh '/path/PR Nanny.app'
 #   DEV_BUILD=1 sh macos/Scripts/package-app.sh '/path/PR Nanny Dev.app'
 #
@@ -11,6 +12,11 @@
 # Without SIGNING_IDENTITY the bundle is ad-hoc signed: a local candidate
 # only, never distributed. Dev builds use the .dev bundle ID and their own
 # data directory, so they never touch the installed app's state.
+# PROVISIONING_PROFILE is the Developer ID profile for com.alexcatdad.pr-nanny
+# that authorizes macos/Resources/PRNanny.entitlements (data-protection
+# keychain, team access group). It is embedded and those entitlements are used
+# unless ENTITLEMENTS names others. Without it the app keeps the GitHub token
+# in the login keychain with an app-only ACL instead.
 # Notarization, stapling and publication belong to `task release`.
 set -eu
 
@@ -22,6 +28,8 @@ MACOS="$ROOT/macos"
 DEV_BUILD=${DEV_BUILD:-0}
 SIGNING_IDENTITY=${SIGNING_IDENTITY:-}
 ENTITLEMENTS=${ENTITLEMENTS:-}
+PROVISIONING_PROFILE=${PROVISIONING_PROFILE:-}
+TEAM_ID=CX6D6KGCT5
 BASE_ID=com.alexcatdad.pr-nanny
 
 if [ "$DEV_BUILD" = 1 ]; then
@@ -74,6 +82,19 @@ cp "$MACOS/Resources/Info.plist" "$APP/Contents/Info.plist"
   -c "Set :CFBundleDisplayName $NAME" \
   -c "Set :CFBundleShortVersionString $SHORT_VERSION" \
   -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP/Contents/Info.plist"
+if [ -n "$PROVISIONING_PROFILE" ]; then
+  [ "$DEV_BUILD" != 1 ] || { echo "dev builds are ad-hoc signed and cannot embed a provisioning profile" >&2; exit 2; }
+  [ -n "$SIGNING_IDENTITY" ] || { echo "PROVISIONING_PROFILE needs SIGNING_IDENTITY" >&2; exit 2; }
+  security cms -D -i "$PROVISIONING_PROFILE" > "$STAGE/profile.plist" || { echo "cannot decode $PROVISIONING_PROFILE" >&2; exit 1; }
+  profile_app=$(plist_get "$STAGE/profile.plist" Entitlements:com.apple.application-identifier)
+  [ "$profile_app" = "$TEAM_ID.$BUNDLE_ID" ] || { echo "profile is for '$profile_app', expected $TEAM_ID.$BUNDLE_ID" >&2; exit 1; }
+  cp "$PROVISIONING_PROFILE" "$APP/Contents/embedded.provisionprofile"
+  ENTITLEMENTS=${ENTITLEMENTS:-$MACOS/Resources/PRNanny.entitlements}
+elif [ -n "$ENTITLEMENTS" ] && grep -q keychain-access-groups "$ENTITLEMENTS"; then
+  # Restricted entitlements without a profile make macOS refuse to launch the app.
+  echo "$ENTITLEMENTS needs PROVISIONING_PROFILE" >&2
+  exit 2
+fi
 find "$APP" -type d -exec chmod 0755 {} +
 find "$APP" -type f -exec chmod 0644 {} +
 chmod 0755 "$APP/Contents/MacOS/PRNanny" "$APP/Contents/Helpers/pr-nanny-helper"
@@ -88,8 +109,11 @@ else
   set -- --force --sign -
   echo "    (ad-hoc: local candidate only)"
 fi
-# The helper first, with a stable identifier for its Keychain items; the outer
-# app last so its seal covers the finished helper.
+# The helper first, with a stable identifier. It has no keychain items of its
+# own: the app keeps the GitHub token and hands it over the socket, and the
+# helper only reads and deletes the login-keychain item PR Nanny 0.1.x wrote
+# (whose ACL trusts /usr/bin/security, not this signature). The outer app last
+# so its seal covers the finished helper.
 codesign "$@" --identifier "$BUNDLE_ID.helper" "$APP/Contents/Helpers/pr-nanny-helper"
 if [ -n "$ENTITLEMENTS" ]; then set -- "$@" --entitlements "$ENTITLEMENTS"; fi
 codesign "$@" "$APP"

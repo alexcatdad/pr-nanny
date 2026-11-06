@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,7 @@ var (
 	ErrUnavailable     = errors.New("That pull request is no longer available. Refresh and try again.")
 	ErrAutostart       = errors.New("Unable to change launch at login. Check your operating system settings.")
 	ErrCredentialStore = errors.New("Native credential storage is unavailable. Unlock your credential store and try again.")
+	ErrNoLegacyToken   = errors.New("No token saved by an earlier PR Nanny version was found.")
 )
 
 type Auth interface {
@@ -27,6 +29,9 @@ type Auth interface {
 	ConnectCLI(context.Context) (string, error)
 	Load(context.Context, string, string) (string, string, error)
 	ForgetPAT(string) error
+	Provide(account, token string) error
+	LegacyToken(account string) (string, error)
+	DeleteLegacy(account string) error
 }
 type Preferences interface {
 	core.Persistence
@@ -185,6 +190,53 @@ func (c *Controller) connect(method, account string) (model.Snapshot, error) {
 	go func() { _ = c.monitor.Refresh(c.ctx) }()
 	return c.GetSnapshot()
 }
+
+// ProvideToken loads the PAT for the configured account from the app's
+// keychain into memory and starts a fetch. Only the configured PAT account
+// is accepted.
+func (c *Controller) ProvideToken(account, token string) (model.Snapshot, error) {
+	s := c.current()
+	if s.AuthMethod != auth.MethodPAT || s.Account == "" || !strings.EqualFold(s.Account, account) {
+		return model.Snapshot{}, ErrAuthentication
+	}
+	if err := c.auth.Provide(s.Account, token); err != nil {
+		return model.Snapshot{}, safeAuthError(err)
+	}
+	go func() { _ = c.monitor.Refresh(c.ctx) }()
+	return c.GetSnapshot()
+}
+
+// LegacyToken returns the configured account's PAT from the login-keychain
+// item PR Nanny 0.1.x wrote, and loads it. The app stores it in its own
+// keychain item and then calls DeleteLegacyToken.
+func (c *Controller) LegacyToken() (string, string, error) {
+	s := c.current()
+	if s.AuthMethod != auth.MethodPAT || s.Account == "" {
+		return "", "", ErrNoLegacyToken
+	}
+	token, err := c.auth.LegacyToken(s.Account)
+	if errors.Is(err, auth.ErrNoCredential) {
+		return "", "", ErrNoLegacyToken
+	}
+	if err != nil {
+		return "", "", safeAuthError(err)
+	}
+	go func() { _ = c.monitor.Refresh(c.ctx) }()
+	return s.Account, token, nil
+}
+
+// DeleteLegacyToken removes the configured account's PR Nanny 0.1.x item.
+func (c *Controller) DeleteLegacyToken() error {
+	s := c.current()
+	if s.Account == "" {
+		return nil
+	}
+	if c.auth.DeleteLegacy(s.Account) != nil {
+		return ErrCredentialStore
+	}
+	return nil
+}
+
 func (c *Controller) SetBell(id string, enabled bool) (model.Snapshot, error) {
 	if len(id) == 0 || len(id) > 256 {
 		return model.Snapshot{}, ErrUnavailable

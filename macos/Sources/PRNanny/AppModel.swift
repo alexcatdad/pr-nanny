@@ -21,6 +21,11 @@ final class AppModel: ObservableObject {
     private let client: HelperClient
     private var process: Process?
     private var attempt = 0
+    /// When the helper first exited with "already running" in this run of retries.
+    private var lockWaitStarted: Date?
+    private let tokens: any TokenStore
+    /// Whether the saved PAT went to the helper since it last started.
+    private var tokenHandedOff = false
     private var stopping = false
     private var startedAt = Date()
     private var cursor = ""
@@ -32,6 +37,7 @@ final class AppModel: ObservableObject {
 
     init() {
         client = HelperClient(socketPath: identity.socketPath)
+        tokens = KeychainTokenStore(bundleID: Bundle.main.bundleIdentifier ?? AppIdentity.bundleID)
     }
 
     var status: MenubarStatus { ConnectionPresentation.status(helper: helper, snapshot: snapshot) }
@@ -44,6 +50,7 @@ final class AppModel: ObservableObject {
             at: identity.dataDirectory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         helper = .starting
         startedAt = Date()
+        tokenHandedOff = false
         do {
             process = try HelperSupervisor(identity: identity).launch { [weak self] status in
                 Task { @MainActor in self?.helperExited(status) }
@@ -66,13 +73,22 @@ final class AppModel: ObservableObject {
     /// "Try again" after the helper gave up or another copy held the lock.
     func retry() {
         attempt = 0
+        lockWaitStarted = nil
         if process == nil { start() } else { syncNow() }
     }
 
     private func helperExited(_ status: Int32) {
         process = nil
         guard !stopping else { return }
-        switch HelperExit.decide(status: status, attempt: attempt) {
+        var waited: TimeInterval = 0
+        if status == HelperExit.alreadyRunningStatus {
+            let since = lockWaitStarted ?? Date()
+            lockWaitStarted = since
+            waited = Date().timeIntervalSince(since)
+        } else {
+            lockWaitStarted = nil
+        }
+        switch HelperExit.decide(status: status, attempt: attempt, waitingForLock: waited) {
         case .alreadyRunning:
             helper = .alreadyRunning
         case .givenUp:
@@ -117,14 +133,29 @@ final class AppModel: ObservableObject {
             switch result {
             case .success(let next):
                 attempt = 0
+                lockWaitStarted = nil
                 helper = .running
                 if next != snapshot { snapshot = next }
+                if !tokenHandedOff { handOffToken(settings: next.settings) }
             case .failure:
                 // The socket appears a moment after launch; only report trouble after a grace period.
                 if helper == .running || Date().timeIntervalSince(startedAt) > 10 {
                     helper = .unavailable("PR Nanny's background helper is not responding. Try again in a moment.")
                 }
             }
+        }
+    }
+
+    /// Gives the helper the PAT from the keychain (or migrates the 0.1.x item) once per helper start.
+    private func handOffToken(settings: AppSettings) {
+        tokenHandedOff = true
+        let client = client
+        let tokens = tokens
+        Task {
+            let outcome = await Self.background {
+                TokenHandoff.start(settings: settings, store: tokens, helper: client)
+            }
+            if case .success(.failed(let message)) = outcome { actionError = message }
         }
     }
 
@@ -213,13 +244,20 @@ final class AppModel: ObservableObject {
     }
 
     func connectPAT(_ token: String) async -> Bool {
-        if case .success = await perform({ try $0.connectPAT(token: token) }) { return true }
-        return false
+        guard case .success(let next) = await perform({ try $0.connectPAT(token: token) }) else { return false }
+        let tokens = tokens
+        let saved = await Self.background {
+            TokenHandoff.saveConnected(token: token, settings: next.settings, store: tokens)
+        }
+        if case .success(let message?) = saved { actionError = message }
+        return true
     }
 
     func connectCLI() async -> Bool {
-        if case .success = await perform({ try $0.connectCLI() }) { return true }
-        return false
+        guard case .success(let next) = await perform({ try $0.connectCLI() }) else { return false }
+        let tokens = tokens
+        _ = await Self.background { TokenHandoff.forgetUnused(settings: next.settings, store: tokens) }
+        return true
     }
 
     var loginItemEnabled: Bool { SMAppService.mainApp.status == .enabled }

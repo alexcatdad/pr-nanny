@@ -71,8 +71,14 @@ import Testing
     #expect(dev.helperArguments == ["-data-dir", "/Users/fixture/Library/Application Support/pr-nanny-dev"])
 }
 
-@Test func restartsWithBackoffButNotWhenAnotherCopyRuns() {
-    #expect(HelperExit.decide(status: 3, attempt: 0) == .alreadyRunning)
+@Test func retriesAnotherCopyForTheLockWaitThenStops() {
+    #expect(HelperExit.decide(status: 3, attempt: 0) == .restart(after: 1))
+    #expect(HelperExit.decide(status: 3, attempt: 3, waitingForLock: 15) == .restart(after: 8))
+    #expect(HelperExit.decide(status: 3, attempt: HelperExit.maxAttempts + 2, waitingForLock: 39) == .restart(after: 8))
+    #expect(HelperExit.decide(status: 3, attempt: 6, waitingForLock: HelperExit.lockWait) == .alreadyRunning)
+}
+
+@Test func restartsWithBackoff() {
     #expect(HelperExit.decide(status: 1, attempt: 0) == .restart(after: 1))
     #expect(HelperExit.decide(status: 1, attempt: 3) == .restart(after: 8))
     #expect(HelperExit.decide(status: 1, attempt: 5) == .restart(after: 30))

@@ -1,3 +1,8 @@
 # Synthetic client-test credential in the original V1 commit. Retain history;
 # only this exact historical finding is excluded, never a path or detector.
 4697f8b025a3cc86615a126d7983997c460e7ce4:internal/github/client_test.go:generic-api-key:17
+# Fake keychain-test values in an earlier commit of the app-owned token
+# branch; later commits replaced them. Only these exact findings are excluded.
+7448d860230b0e3daead343f20ed1fac75f20d7a:internal/auth/memory_store_test.go:generic-api-key:56
+7448d860230b0e3daead343f20ed1fac75f20d7a:macos/Tests/PRNannyNativeTests/TokenStoreTests.swift:generic-api-key:95
+7448d860230b0e3daead343f20ed1fac75f20d7a:macos/Tests/PRNannyNativeTests/TokenStoreTests.swift:generic-api-key:104

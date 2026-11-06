@@ -6,8 +6,6 @@ import (
 	"errors"
 	"os"
 	"testing"
-
-	"github.com/zalando/go-keyring"
 )
 
 // TestNativeStoreRoundTrip is opt-in because a real OS vault may prompt for
@@ -26,7 +24,7 @@ func TestNativeStoreRoundTrip(t *testing.T) {
 			t.Error("could not remove synthetic test credential")
 			return
 		}
-		if _, err := store.Get(service, account); !errors.Is(err, keyring.ErrNotFound) {
+		if _, err := store.Get(service, account); !errors.Is(err, ErrNoCredential) {
 			t.Error("synthetic test credential remained after cleanup")
 		}
 	}
@@ -48,7 +46,7 @@ func TestNativeStoreRoundTrip(t *testing.T) {
 	if err := store.Delete(service, account); err != nil {
 		t.Fatal("native credential store delete failed")
 	}
-	if _, err := store.Get(service, account); !errors.Is(err, keyring.ErrNotFound) {
+	if _, err := store.Get(service, account); !errors.Is(err, ErrNoCredential) {
 		t.Fatal("deleted synthetic credential was still available")
 	}
 }

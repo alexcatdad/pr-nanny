@@ -37,7 +37,8 @@ public struct AppIdentity: Equatable, Sendable {
 
 /// How the supervisor reacts when the helper exits.
 public enum HelperExit: Equatable, Sendable {
-    /// Another PR Nanny process holds the instance lock (exit status 3). Not restarted.
+    /// Another PR Nanny process still holds the instance lock (exit status 3)
+    /// after `lockWait` seconds of retries. Not restarted.
     case alreadyRunning
     /// Restart after this many seconds.
     case restart(after: TimeInterval)
@@ -46,10 +47,18 @@ public enum HelperExit: Equatable, Sendable {
 
     public static let alreadyRunningStatus: Int32 = 3
     public static let maxAttempts = 6
+    /// A helper from a crashed or upgraded app can hold the lock for about
+    /// 35 seconds while it finishes a request and notices its parent is gone.
+    public static let lockWait: TimeInterval = 40
 
-    /// Exponential backoff 1, 2, 4 … 30 seconds, then give up.
-    public static func decide(status: Int32, attempt: Int) -> HelperExit {
-        if status == alreadyRunningStatus { return .alreadyRunning }
+    /// Exponential backoff 1, 2, 4 … 30 seconds, then give up. Exit 3 is
+    /// retried with 1, 2, 4, 8, 8 … seconds until `lockWait` has passed since
+    /// the first one (`waitingForLock`).
+    public static func decide(status: Int32, attempt: Int, waitingForLock: TimeInterval = 0) -> HelperExit {
+        if status == alreadyRunningStatus {
+            guard waitingForLock < lockWait else { return .alreadyRunning }
+            return .restart(after: min(8, pow(2, Double(attempt))))
+        }
         guard attempt < maxAttempts else { return .givenUp }
         return .restart(after: min(30, pow(2, Double(attempt))))
     }

@@ -67,6 +67,7 @@ type CLI interface {
 
 type Manager struct {
 	store     Store
+	legacy    Store
 	validator Validator
 	cli       CLI
 }
@@ -153,6 +154,62 @@ func (m *Manager) Load(ctx context.Context, method, account string) (string, str
 		return "", "", ErrInvalidToken
 	}
 	return token, login, nil
+}
+
+// WithLegacyStore sets the store that PR Nanny 0.1.x wrote PATs to, read
+// once for migration by LegacyToken and cleared by DeleteLegacy.
+func (m *Manager) WithLegacyStore(legacy Store) *Manager {
+	m.legacy = legacy
+	return m
+}
+
+// Provide loads a PAT that the app kept in its keychain. The token is checked
+// for shape here and validated against GitHub on the next Load.
+func (m *Manager) Provide(account, token string) error {
+	if m == nil || m.store == nil {
+		return ErrCredentialStore
+	}
+	if !validLogin(account) || !validTokenShape(token) {
+		return ErrInvalidToken
+	}
+	if err := m.store.Set(service, account, token); err != nil {
+		return ErrCredentialStore
+	}
+	return nil
+}
+
+// LegacyToken reads the PAT that PR Nanny 0.1.x saved for account and loads
+// it like Provide, so the app can move it into its own keychain item.
+func (m *Manager) LegacyToken(account string) (string, error) {
+	if m == nil || m.legacy == nil || !validLogin(account) {
+		return "", ErrNoCredential
+	}
+	token, err := m.legacy.Get(service, account)
+	if errors.Is(err, ErrNoCredential) || err == nil && !validTokenShape(token) {
+		return "", ErrNoCredential
+	}
+	if err != nil {
+		return "", ErrCredentialStore
+	}
+	if err := m.Provide(account, token); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// DeleteLegacy removes the PR Nanny 0.1.x item for account. A missing item
+// is not an error.
+func (m *Manager) DeleteLegacy(account string) error {
+	if m == nil || m.legacy == nil {
+		return ErrCredentialStore
+	}
+	if !validLogin(account) {
+		return ErrNoCredential
+	}
+	if err := m.legacy.Delete(service, account); err != nil {
+		return ErrCredentialStore
+	}
+	return nil
 }
 
 func (m *Manager) ForgetPAT(account string) error {
