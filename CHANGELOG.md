@@ -9,6 +9,7 @@ All notable changes are recorded here. The format follows
 
 ### Added
 
+- Stricter gates: golangci-lint adds gosec, errorlint, bodyclose, misspell and gocritic diagnostics; Swift tests build with warnings as errors and `task test` enforces a 69% `PRNannyNative` line-coverage floor.
 - Native Swift menu-bar app (`macos/`) on [menubar-kit](https://github.com/alexcatdad/menubar-kit): template tray glyph with an attention badge, status-aware VoiceOver label, 340pt panel with Show all/Tabs layouts and per-PR bells, and a Settings window. It supervises the bundled `pr-nanny-helper`.
 - `pr-nanny-helper`: the backend as a separate process with a versioned JSON API over a private unix socket, for the coming native menu-bar app ([docs/HELPER-API.md](docs/HELPER-API.md)).
 - A single-instance lock on the data directory, shared by the app and the helper.

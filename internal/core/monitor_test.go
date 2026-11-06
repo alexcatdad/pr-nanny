@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -721,15 +722,7 @@ func (f blockingFetcher) Fetch(context.Context, string, string, []string) (model
 }
 
 func equalEvents(a, b []Event) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(a, b)
 }
 
 func TestReviewRemovalKeepsExplicitBellAcrossRestart(t *testing.T) {
@@ -883,13 +876,5 @@ func TestReviewRequestIDSlicesAreCopiedAcrossSnapshotAndPersistence(t *testing.T
 }
 
 func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(a, b)
 }

@@ -272,7 +272,7 @@ func (f *fakeGitHub) searchMatches(search string) []fakePR {
 		}
 		switch {
 		case strings.Contains(search, "author:"):
-			if strings.EqualFold(pr.author, strings.TrimPrefix(search[strings.Index(search, "author:"):], "author:")) {
+			if strings.EqualFold(pr.author, authorQuery(search)) {
 				out = append(out, pr)
 			}
 		case strings.Contains(search, "user-review-requested:"):
@@ -348,4 +348,10 @@ type constantBody string
 
 func (b constantBody) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	_, _ = io.WriteString(w, string(b))
+}
+
+// authorQuery returns the text after the first "author:" in a search query.
+func authorQuery(search string) string {
+	_, after, _ := strings.Cut(search, "author:")
+	return after
 }

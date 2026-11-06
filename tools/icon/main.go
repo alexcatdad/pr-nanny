@@ -43,7 +43,7 @@ func render(size int, template bool, samples int) *image.NRGBA {
 			total := samples * samples
 			switch {
 			case template:
-				img.SetNRGBA(x, y, color.NRGBA{A: uint8(255 * body / total)})
+				img.SetNRGBA(x, y, color.NRGBA{A: uint8(255 * body / total)}) //nolint:gosec // G115: body <= total, so the value is in 0..255
 			case check*2 > total:
 				img.SetNRGBA(x, y, color.NRGBA{255, 255, 255, 255})
 			case body*2 > total:
@@ -55,7 +55,7 @@ func render(size int, template bool, samples int) *image.NRGBA {
 }
 
 func write(path string, img image.Image) {
-	f, err := os.Create(path)
+	f, err := os.Create(path) //nolint:gosec // G304: developer tool writing to the path it was given
 	if err != nil {
 		panic(err)
 	}

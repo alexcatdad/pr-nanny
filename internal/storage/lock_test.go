@@ -46,7 +46,7 @@ func TestLockInstanceRejectsSymlinkAndLooseLockFile(t *testing.T) {
 		t.Fatalf("symlinked lock error = %v", err)
 	}
 	loose := t.TempDir()
-	if err := os.WriteFile(filepath.Join(loose, "pr-nanny.lock"), nil, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(loose, "pr-nanny.lock"), nil, 0o644); err != nil { //nolint:gosec // G306: the test needs a lock file with loose permissions
 		t.Fatal(err)
 	}
 	if _, err := LockInstance(loose); !errors.Is(err, ErrLockUnavailable) {

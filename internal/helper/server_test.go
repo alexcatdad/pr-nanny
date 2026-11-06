@@ -23,7 +23,7 @@ import (
 	"github.com/alexcatdad/pr-nanny/internal/storage"
 )
 
-const syntheticToken = "github_pat_synthetic_fixture_value"
+const syntheticToken = "github_pat_synthetic_fixture_value" //nolint:gosec // G101: synthetic test fixture, not a credential
 
 type fakeBackend struct {
 	mu       sync.Mutex
