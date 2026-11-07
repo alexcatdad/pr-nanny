@@ -8,12 +8,14 @@ PR Nanny is a passive GitHub.com pull-request monitor that lives in the macOS me
 
 ## Screenshots
 
-Rendered from synthetic fixtures; no GitHub account data is shown.
+Rendered offscreen from made-up fixtures; no GitHub account data is shown.
 
-| Show all | Tabs | Not connected |
+| Show all | Tabs | Settings |
 | --- | --- | --- |
-| ![Panel, all sections, light](docs/screenshots/panel-all-light.png) | ![Panel, tabs, light](docs/screenshots/panel-tabs-light.png) | ![Panel asking to connect GitHub](docs/screenshots/panel-signin-light.png) |
-| ![Panel, all sections, dark](docs/screenshots/panel-all-dark.png) | | |
+| ![Panel showing authored, review-requested and recently closed pull requests, light](site/public/screenshots/panel-light.png) | ![Panel in the Tabs layout, light](site/public/screenshots/panel-tabs-light.png) | ![Settings window, light](site/public/screenshots/settings-light.png) |
+| ![Panel showing authored, review-requested and recently closed pull requests, dark](site/public/screenshots/panel-dark.png) | ![Panel in the Tabs layout, dark](site/public/screenshots/panel-tabs-dark.png) | ![Settings window, dark](site/public/screenshots/settings-dark.png) |
+
+Regenerate them with `task screenshots`.
 
 ## What it does
 
@@ -23,14 +25,19 @@ Rendered from synthetic fixtures; no GitHub account data is shown.
 - Polls every 60 seconds by default and supports 30 seconds, 2 minutes, or 5 minutes. Offline and rate-limit states preserve the last fetched rows.
 - Supports existing `gh` CLI authentication or a validated PAT that the app keeps in its own Keychain item. The helper receives it over a private socket and holds it in memory only.
 - Sends local notifications only after you turn on **Allow notifications** in Settings (off by default; macOS asks for permission then; silent unless you turn on sound). Review requests notify when that event is enabled; other changes also require that PR's bell, and bells start off.
+- Can start at login (**Launch at login** in Settings, off by default).
 
 CI summaries combine check runs and commit statuses. A failure takes precedence over a pending check; pending checks show Running; all successful, neutral, or skipped checks show Passed. Missing, incomplete, malformed, or unknown results show Not available. Approval means at least one current non-author opinionated review is approved; it is not a merge-readiness calculation.
 
 ## Download and install
 
-Release archives are named with the release version (CalVer `vYYYY.MM.DD.N` from the next release; earlier releases are `0.1.x`):
+Install with Homebrew (macOS 13 or newer, Apple Silicon):
 
-- **macOS:** `pr-nanny-VERSION-darwin-arm64.zip` — macOS 13 or newer, Apple Silicon. Unzip and drag **PR Nanny.app** onto **Applications**, or install the Homebrew cask (`brew install --cask alexcatdad/tap/pr-nanny`).
+```sh
+brew install --cask alexcatdad/tap/pr-nanny
+```
+
+Upgrade with `brew upgrade --cask pr-nanny`. Or download `pr-nanny-VERSION-darwin-arm64.zip` (versions are CalVer `vYYYY.MM.DD.N`; earlier releases are `0.1.x`), unzip it and drag **PR Nanny.app** onto **Applications**.
 
 Download archives from [Releases](https://github.com/alexcatdad/pr-nanny/releases) and verify the release `SHA256SUMS` before installing. The app is Developer ID signed, notarised and stapled before publication; signing credentials stay in the maintainer's local Keychain.
 
@@ -38,7 +45,7 @@ Download archives from [Releases](https://github.com/alexcatdad/pr-nanny/release
 
 ## Authentication and permissions
 
-The first launch stays in the menu bar. Choose **GitHub CLI** to reuse the existing `gh` session, or provide a PAT in Settings. PR Nanny validates a PAT before switching accounts and stores it only in the macOS Keychain, in an item only PR Nanny can read. A credential-store failure does not use a plaintext fallback. `gh` tokens are fetched when needed and are not copied into PR Nanny's credential store.
+The first launch stays in the menu bar. Open **Settings** from the panel and either choose **Connect GitHub CLI** to reuse your existing `gh auth login` session, or paste a PAT. PR Nanny validates a PAT before switching accounts and stores it only in the macOS Keychain, in an item only PR Nanny can read. A credential-store failure does not use a plaintext fallback. `gh` tokens are fetched when needed and are not copied into PR Nanny's credential store.
 
 For a **fine-grained PAT**, grant repository **Pull requests: read**, **Checks: read**, **Commit statuses: read**, and **Metadata: read**; grant organization **Members: read** to discover your teams. Limit repository access to the repositories you want to monitor. Organization policy may require owner approval before a token can read private resources. For a **classic PAT**, private repository access requires the broad `repo` scope, and team discovery requires `read:org`; classic scopes cannot be narrowed to read-only repository permissions. Authorize the classic token for each organization that enforces SAML SSO. See GitHub's [fine-grained token permission reference](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens) and [SSO authorization guidance](https://docs.github.com/authentication/authenticating-with-saml-single-sign-on/authorizing-a-personal-access-token-for-use-with-single-sign-on).
 
