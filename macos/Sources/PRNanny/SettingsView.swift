@@ -11,6 +11,8 @@ struct SettingsView: View {
     @State private var notice = ""
     @State private var working = false
     @State private var launchAtLogin = false
+    /// Where the About section reads the version; renders pass a fixture bundle.
+    var versionBundle: Bundle = .main
 
     var body: some View {
         SettingsForm {
@@ -29,7 +31,8 @@ struct SettingsView: View {
             if !notice.isEmpty {
                 Text(notice).font(.callout).foregroundStyle(.secondary).accessibilityAddTraits(.updatesFrequently)
             }
-            SettingsAboutSection(repository: URL(string: "https://github.com/alexcatdad/pr-nanny"))
+            SettingsAboutSection(
+                bundle: versionBundle, repository: URL(string: "https://github.com/alexcatdad/pr-nanny"))
         }
         .disabled(working || model.busy)
         // The kit section owns the toggle and the permission prompt; the helper gates

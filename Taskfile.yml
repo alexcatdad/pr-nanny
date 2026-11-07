@@ -72,6 +72,11 @@ tasks:
       - go -C tools/security build -o ../../.tools/gosec github.com/securego/gosec/v2/cmd/gosec
       - .tools/gosec -quiet ./internal/... ./cmd/...
 
+  screenshots:
+    desc: Render the site and README screenshots from fixtures into site/public/screenshots
+    cmds:
+      - PR_NANNY_SCREENSHOTS="$PWD/site/public/screenshots" PR_NANNY_SCREENSHOT_VERSION="$(git describe --tags --abbrev=0)" swift test --package-path macos --filter ScreenshotTests
+
   dev:app:
     desc: Build 'PR Nanny Dev.app' (bundle ID com.alexcatdad.pr-nanny.dev) into macos/.build/dev
     cmds:

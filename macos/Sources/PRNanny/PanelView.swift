@@ -7,6 +7,8 @@ struct PanelView: View {
     @EnvironmentObject private var model: AppModel
     @State private var tab: PRCategory = .authored
     @State private var folded: Set<PRCategory> = []
+    /// Where the version footer reads the version; renders pass a fixture bundle.
+    var versionBundle: Bundle = .main
 
     var body: some View {
         MenubarPanel {
@@ -20,7 +22,7 @@ struct PanelView: View {
             MenuSection(quitTitle: "Quit PR Nanny", quitHelp: "Stops monitoring until you open PR Nanny again.") {
                 OpenSettingsButton("Settings…")
             }
-            VersionFooter()
+            VersionFooter(bundle: versionBundle)
         }
     }
 
