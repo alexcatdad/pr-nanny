@@ -60,3 +60,6 @@ The app is a Swift menu-bar app (`macos/`, built on [menubar-kit](https://github
 ## Development and verification
 
 Run `task check` for the full local gate (lint, build, tests and security scans); CI runs the same tasks. See [CONTRIBUTING.md](CONTRIBUTING.md). Releases are built, signed and published only by the explicit local `task release` flow described in [CONTRIBUTING.md](CONTRIBUTING.md#releases); CI validates and never releases. Review [the implementation checkpoint](docs/IMPLEMENTATION-STATUS.md) for the distinction between completed and pending qualification.
+
+<!-- docs-only CI test -->
+
